@@ -82,7 +82,7 @@ class GeminiService(
 
             Log.i(
                 tag,
-                "[API_KEY_VALIDATION] Primary endpoint 'v1beta/models/gemini-3.6-flash:generateContent' returned HTTP $httpCode | Successful=${response.isSuccessful} | ResponseBody=$responseBody | ErrorBody=$rawErrorBody"
+                "[API_KEY_VALIDATION] Primary endpoint 'v1beta/models/gemini-3.6-flash:generateContent' returned HTTP $httpCode | Successful=${response.isSuccessful} | ResponseBody=$responseBody | Candidates=${responseBody?.candidates} | ErrorBody=$rawErrorBody"
             )
 
             // Case 1: HTTP 200 OK
@@ -92,6 +92,17 @@ class GeminiService(
                     Log.w(tag, "[API_KEY_VALIDATION] HTTP 200 returned API error: ${apiError.message}")
                     return@withContext Result.failure(Exception("API Key Invalid: ${apiError.message}"))
                 }
+
+                val firstCandidate = responseBody?.candidates?.firstOrNull()
+                val finishReason = firstCandidate?.finishReason
+                val parts = firstCandidate?.content?.parts
+
+                Log.i(tag, "[API_KEY_VALIDATION] Candidate finishReason: '${finishReason ?: "STOP"}' | Parts count: ${parts?.size ?: 0}")
+
+                if (firstCandidate != null && finishReason != null && finishReason != "STOP") {
+                    Log.w(tag, "[API_KEY_VALIDATION] Warning: Ping response ended with non-STOP finishReason '$finishReason'")
+                }
+
                 Log.i(tag, "[API_KEY_VALIDATION] SUCCESS: Key validated via gemini-3.6-flash endpoint.")
                 return@withContext Result.success("API key verified and stored securely.")
             }
@@ -202,6 +213,35 @@ class GeminiService(
             val responseBody = response.body()!!
             val candidate = responseBody.candidates?.firstOrNull()
             val candidateContent = candidate?.content
+            val finishReason = candidate?.finishReason
+            val parts = candidateContent?.parts
+
+            Log.i(
+                tag,
+                "[GEMINI_RESPONSE] HTTP 200 | Candidates count: ${responseBody.candidates?.size ?: 0} | finishReason: '${finishReason ?: "STOP"}' | Parts count: ${parts?.size ?: 0} | PromptFeedback: ${responseBody.promptFeedback}"
+            )
+
+            if (finishReason != null && finishReason != "STOP") {
+                Log.w(tag, "[GEMINI_RESPONSE] Non-STOP finishReason encountered: '$finishReason'")
+            }
+
+            if (parts.isNullOrEmpty()) {
+                Log.w(tag, "[GEMINI_RESPONSE] Candidate has no content parts. finishReason='$finishReason'")
+                val fallbackSpoken = when (finishReason) {
+                    "SAFETY" -> "Request was blocked by Gemini safety settings."
+                    "MAX_TOKENS" -> "The response exceeded token limits."
+                    "RECITATION" -> "Response was blocked due to recitation policy."
+                    "OTHER" -> "The AI response ended unexpectedly."
+                    else -> if (finishReason != null) "Gemini response stopped ($finishReason)." else "Received empty response from Gemini API."
+                }
+
+                return@withContext AssistantCommandResult(
+                    spokenResponse = fallbackSpoken,
+                    toolCallRequest = null,
+                    executedToolResult = null,
+                    executionSource = "gemini_api_empty_parts"
+                )
+            }
 
             // 1. Identify tool call from response (Native functionCall or parsed tags)
             val toolCall = identifyToolCall(candidateContent)
@@ -271,10 +311,11 @@ class GeminiService(
      * Identifies tool calls either from Gemini Function Calling structure or text directives.
      */
     private fun identifyToolCall(content: GeminiContent?): ToolCallRequest? {
-        if (content == null) return null
+        val partsList = content?.parts
+        if (partsList.isNullOrEmpty()) return null
 
         // 1. Check for native Gemini functionCall
-        for (part in content.parts) {
+        for (part in partsList) {
             val fn = part.functionCall
             if (fn != null && fn.name.isNotBlank()) {
                 val cleanArgs = fn.args ?: emptyMap()
@@ -286,17 +327,19 @@ class GeminiService(
         }
 
         // 2. Check for text directive fallback: [TOOL:COMMAND:arg1:arg2]
-        val fullText = content.parts.mapNotNull { it.text }.joinToString("\n")
-        val toolRegex = Regex("\\[TOOL:([A-Za-z0-9_]+)(?::([^:\\]]+))?(?::([^\\]]+))?\\]")
-        val match = toolRegex.find(fullText)
-        if (match != null) {
-            val cmd = match.groupValues[1]
-            val arg1 = match.groupValues.getOrNull(2)
-            val arg2 = match.groupValues.getOrNull(3)
-            val argsMap = mutableMapOf<String, Any?>()
-            if (arg1 != null) argsMap["arg1"] = arg1
-            if (arg2 != null) argsMap["arg2"] = arg2
-            return ToolCallRequest(functionName = cmd, arguments = argsMap)
+        val fullText = partsList.mapNotNull { it.text }.joinToString("\n")
+        if (fullText.isNotBlank()) {
+            val toolRegex = Regex("\\[TOOL:([A-Za-z0-9_]+)(?::([^:\\]]+))?(?::([^\\]]+))?\\]")
+            val match = toolRegex.find(fullText)
+            if (match != null) {
+                val cmd = match.groupValues[1]
+                val arg1 = match.groupValues.getOrNull(2)
+                val arg2 = match.groupValues.getOrNull(3)
+                val argsMap = mutableMapOf<String, Any?>()
+                if (arg1 != null) argsMap["arg1"] = arg1
+                if (arg2 != null) argsMap["arg2"] = arg2
+                return ToolCallRequest(functionName = cmd, arguments = argsMap)
+            }
         }
 
         return null
@@ -306,8 +349,9 @@ class GeminiService(
      * Extracts spoken response text from candidates, stripping any markup directives.
      */
     private fun extractSpokenResponse(content: GeminiContent?, toolCall: ToolCallRequest?): String {
+        val partsList = content?.parts ?: emptyList()
         val toolRegex = Regex("\\[TOOL:([A-Za-z0-9_]+)(?::([^:\\]]+))?(?::([^\\]]+))?\\]")
-        val rawText = content?.parts?.mapNotNull { it.text }?.joinToString(" ")?.replace(toolRegex, "")?.trim() ?: ""
+        val rawText = partsList.mapNotNull { it.text }.joinToString(" ").replace(toolRegex, "").trim()
 
         if (rawText.isNotBlank()) {
             return rawText

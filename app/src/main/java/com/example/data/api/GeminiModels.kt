@@ -16,7 +16,7 @@ data class GeminiGenerateContentRequest(
 @JsonClass(generateAdapter = true)
 data class GeminiContent(
     @Json(name = "role") val role: String? = null,
-    @Json(name = "parts") val parts: List<GeminiPart>
+    @Json(name = "parts") val parts: List<GeminiPart>? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -69,13 +69,16 @@ data class GeminiGenerationConfig(
 @JsonClass(generateAdapter = true)
 data class GeminiGenerateContentResponse(
     @Json(name = "candidates") val candidates: List<GeminiCandidate>? = null,
-    @Json(name = "error") val error: GeminiErrorResponse? = null
+    @Json(name = "error") val error: GeminiErrorResponse? = null,
+    @Json(name = "promptFeedback") val promptFeedback: Map<String, Any?>? = null
 )
 
 @JsonClass(generateAdapter = true)
 data class GeminiCandidate(
     @Json(name = "content") val content: GeminiContent? = null,
-    @Json(name = "finishReason") val finishReason: String? = null
+    @Json(name = "finishReason") val finishReason: String? = null,
+    @Json(name = "finishMessage") val finishMessage: String? = null,
+    @Json(name = "index") val index: Int? = null
 )
 
 @JsonClass(generateAdapter = true)
