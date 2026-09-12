@@ -30,6 +30,8 @@ class AuraApplication : Application() {
         private set
     lateinit var spokenOutputManager: GeminiSpokenOutputManager
         private set
+    lateinit var customVoiceCloneManager: com.example.voice.CustomVoiceCloneManager
+        private set
     lateinit var callManager: com.example.system.AuraCallManager
         private set
 
@@ -44,6 +46,7 @@ class AuraApplication : Application() {
         deviceController = DeviceController(this)
         toolExecutionModule = ToolExecutionModule(this, preferences)
         theftGuardManager = com.example.security.TheftGuardManager(this)
+        customVoiceCloneManager = com.example.voice.CustomVoiceCloneManager(this, preferences)
         geminiService = GeminiService(this, keystoreManager, preferences, deviceController, toolExecutionModule)
         spokenOutputManager = GeminiSpokenOutputManager(this, preferences.selectedLanguageCode)
         callManager = com.example.system.AuraCallManager(

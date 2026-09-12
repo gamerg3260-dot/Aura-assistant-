@@ -64,7 +64,7 @@ class AssistantPreferences(context: Context) {
         get() = prefs.getString("license_key_masked", "") ?: ""
         set(value) = prefs.edit().putString("license_key_masked", value).apply()
 
-    // Natural Female Voice Persona Tuning
+    // Natural Female Voice Persona Tuning & Custom Voice Cloning
     var speechPitch: Float
         get() = prefs.getFloat("speech_pitch", 1.14f)
         set(value) = prefs.edit().putFloat("speech_pitch", value).apply()
@@ -72,6 +72,18 @@ class AssistantPreferences(context: Context) {
     var speechRate: Float
         get() = prefs.getFloat("speech_rate", 1.02f)
         set(value) = prefs.edit().putFloat("speech_rate", value).apply()
+
+    var isCustomVoiceEnabled: Boolean
+        get() = prefs.getBoolean("is_custom_voice_enabled", false)
+        set(value) = prefs.edit().putBoolean("is_custom_voice_enabled", value).apply()
+
+    var activeCustomVoiceId: String
+        get() = prefs.getString("active_custom_voice_id", "") ?: ""
+        set(value) = prefs.edit().putString("active_custom_voice_id", value).apply()
+
+    var customVoicesJson: String
+        get() = prefs.getString("custom_voices_json", "") ?: ""
+        set(value) = prefs.edit().putString("custom_voices_json", value).apply()
 
     // 10 Feature Categories Toggles
     // 1. System Control

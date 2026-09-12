@@ -1,6 +1,7 @@
 package com.example.ui
 
 import android.app.Application
+import android.net.Uri
 import android.speech.SpeechRecognizer
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -142,18 +143,132 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
     private val _speechRate = MutableStateFlow(prefs.speechRate)
     val speechRate: StateFlow<Float> = _speechRate.asStateFlow()
 
+    // Custom Voice Cloning
+    val customVoiceCloneManager = app.customVoiceCloneManager
+    val isCustomVoiceEnabled: StateFlow<Boolean> = customVoiceCloneManager.isCustomVoiceEnabled
+    val customVoiceProfiles: StateFlow<List<com.example.voice.CustomVoiceProfile>> = customVoiceCloneManager.profiles
+    val activeCustomVoiceProfile: StateFlow<com.example.voice.CustomVoiceProfile?> = customVoiceCloneManager.activeProfile
+    val isRecordingVoiceSample: StateFlow<Boolean> = customVoiceCloneManager.isRecording
+    val isPlayingSample: StateFlow<Boolean> = customVoiceCloneManager.isPlayingSample
+
     val activeVoiceName: StateFlow<String> = app.spokenOutputManager.activeVoiceName
 
     fun setSpeechPitch(pitch: Float) {
         _speechPitch.value = pitch
         prefs.speechPitch = pitch
         app.spokenOutputManager.setPitch(pitch)
+        val active = activeCustomVoiceProfile.value
+        if (active != null) {
+            customVoiceCloneManager.updateProfileTuning(active.id, pitch, _speechRate.value)
+        }
     }
 
     fun setSpeechRate(rate: Float) {
         _speechRate.value = rate
         prefs.speechRate = rate
         app.spokenOutputManager.setSpeechRate(rate)
+        val active = activeCustomVoiceProfile.value
+        if (active != null) {
+            customVoiceCloneManager.updateProfileTuning(active.id, _speechPitch.value, rate)
+        }
+    }
+
+    fun toggleCustomVoice(enabled: Boolean) {
+        customVoiceCloneManager.toggleCustomVoice(enabled)
+        if (enabled) {
+            val active = activeCustomVoiceProfile.value
+            if (active != null) {
+                app.spokenOutputManager.setPitch(active.pitch)
+                app.spokenOutputManager.setSpeechRate(active.speed)
+            }
+        }
+    }
+
+    fun selectCustomVoice(id: String) {
+        customVoiceCloneManager.selectProfile(id)
+        val active = customVoiceCloneManager.activeProfile.value
+        if (active != null) {
+            _speechPitch.value = active.pitch
+            _speechRate.value = active.speed
+            app.spokenOutputManager.setPitch(active.pitch)
+            app.spokenOutputManager.setSpeechRate(active.speed)
+        }
+    }
+
+    fun importCustomVoice(uri: Uri, name: String) {
+        viewModelScope.launch {
+            val profile = customVoiceCloneManager.importVoiceSampleFromUri(uri, name)
+            if (profile != null) {
+                _speechPitch.value = profile.pitch
+                _speechRate.value = profile.speed
+                app.spokenOutputManager.setPitch(profile.pitch)
+                app.spokenOutputManager.setSpeechRate(profile.speed)
+                _statusMessage.value = "Custom voice '${profile.name}' imported & selected!"
+            } else {
+                _statusMessage.value = "Failed to import voice sample."
+            }
+        }
+    }
+
+    fun startRecordingVoiceSample() {
+        customVoiceCloneManager.startRecordingLiveVoiceSample()
+    }
+
+    fun stopRecordingVoiceSample(name: String) {
+        val profile = customVoiceCloneManager.stopRecordingLiveVoiceSample(name)
+        if (profile != null) {
+            _speechPitch.value = profile.pitch
+            _speechRate.value = profile.speed
+            app.spokenOutputManager.setPitch(profile.pitch)
+            app.spokenOutputManager.setSpeechRate(profile.speed)
+            _statusMessage.value = "Live voice recording '${profile.name}' saved & activated!"
+        }
+    }
+
+    fun cancelRecordingVoiceSample() {
+        customVoiceCloneManager.cancelRecording()
+    }
+
+    fun deleteCustomVoice(id: String) {
+        customVoiceCloneManager.deleteProfile(id)
+    }
+
+    fun playCustomVoiceSample(profile: com.example.voice.CustomVoiceProfile) {
+        customVoiceCloneManager.playProfileSample(profile)
+    }
+
+    fun testCustomClonedVoice() {
+        val active = activeCustomVoiceProfile.value
+        val sampleText = if (isCustomVoiceEnabled.value && active != null) {
+            "Namaste! Main '${active.name}' ki cloned voice persona mein bol raha hun. Aapka voice assistant ab customized audio synthesis ke saath ready hai."
+        } else {
+            "Hello! I am Aura, your personal AI assistant. My voice is tuned to a natural, warm feminine tone. How can I help you today?"
+        }
+        _lastAssistantReply.value = sampleText
+        _listeningState.value = AssistantListeningState.SPEAKING
+        _statusMessage.value = "Playing Voice Sample..."
+
+        if (isCustomVoiceEnabled.value && active != null) {
+            customVoiceCloneManager.playProfileSample(active) {
+                app.spokenOutputManager.speakGeminiResponse(
+                    rawLlmResponse = sampleText,
+                    onStart = { _listeningState.value = AssistantListeningState.SPEAKING },
+                    onComplete = {
+                        _listeningState.value = AssistantListeningState.STANDBY
+                        _statusMessage.value = "Ready"
+                    }
+                )
+            }
+        } else {
+            app.spokenOutputManager.speakGeminiResponse(
+                rawLlmResponse = sampleText,
+                onStart = { _listeningState.value = AssistantListeningState.SPEAKING },
+                onComplete = {
+                    _listeningState.value = AssistantListeningState.STANDBY
+                    _statusMessage.value = "Ready"
+                }
+            )
+        }
     }
 
     // Theft Guard State

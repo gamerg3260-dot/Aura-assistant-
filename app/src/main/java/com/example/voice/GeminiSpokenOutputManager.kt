@@ -274,6 +274,17 @@ class GeminiSpokenOutputManager(
         activeCompletionCallback = onComplete
         _currentSpokenText.value = sanitizedText
 
+        val appInstance = com.example.AuraApplication.instance
+        val customMgr = appInstance.customVoiceCloneManager
+        val isCustomActive = customMgr.isCustomVoiceEnabled.value
+        val activeCustomProfile = customMgr.activeProfile.value
+
+        if (isCustomActive && activeCustomProfile != null) {
+            _activeVoiceName.value = "Cloned Voice (${activeCustomProfile.name})"
+            setPitch(activeCustomProfile.pitch)
+            setSpeechRate(activeCustomProfile.speed)
+        }
+
         if (!isInitialized || textToSpeech == null) {
             initializeTtsEngine(currentLanguageCode)
         }
