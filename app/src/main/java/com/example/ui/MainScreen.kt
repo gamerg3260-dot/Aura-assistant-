@@ -49,10 +49,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.AuraApplication
+import com.example.ui.components.PermissionHandlerSheet
+import com.example.system.PermissionHandler
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.HistoryScreen
 import com.example.ui.screens.OnboardingScreen
@@ -86,19 +89,25 @@ data class NavTabItem(
 fun MainScreen(
     viewModel: AuraViewModel
 ) {
+    val context = LocalContext.current
     val prefs = AuraApplication.instance.preferences
     val isVoiceEnrolled by viewModel.isVoiceEnrolled.collectAsState()
     val isBgServiceEnabled by viewModel.isBackgroundServiceEnabled.collectAsState()
     val stats by viewModel.deviceStats.collectAsState()
 
+    var showMainPermissionSheet by remember { mutableStateOf(false) }
+
+    PermissionHandlerSheet(
+        isVisible = showMainPermissionSheet,
+        onDismiss = { showMainPermissionSheet = false },
+        onPermissionsCompleted = {
+            showMainPermissionSheet = false
+            viewModel.toggleBackgroundService(true)
+        }
+    )
+
     var currentScreen by remember {
-        mutableStateOf<ScreenDestination>(
-            when {
-                !prefs.isOnboardingCompleted -> ScreenDestination.Onboarding
-                !prefs.isVoiceEnrolled -> ScreenDestination.VoiceEnrollment
-                else -> ScreenDestination.MainApp
-            }
-        )
+        mutableStateOf<ScreenDestination>(ScreenDestination.MainApp)
     }
 
     var selectedTabIndex by remember { mutableIntStateOf(0) }
@@ -139,7 +148,16 @@ fun MainScreen(
                             batteryPct = stats.batteryPercent,
                             isCharging = stats.isCharging,
                             onToggleService = {
-                                viewModel.toggleBackgroundService(!isBgServiceEnabled)
+                                if (!isBgServiceEnabled) {
+                                    val permState = PermissionHandler.checkPermissions(context)
+                                    if (permState.hasAudioPermission) {
+                                        viewModel.toggleBackgroundService(true)
+                                    } else {
+                                        showMainPermissionSheet = true
+                                    }
+                                } else {
+                                    viewModel.toggleBackgroundService(false)
+                                }
                             }
                         )
                     },

@@ -16,7 +16,7 @@ class AssistantPreferences(context: Context) {
         set(value) = prefs.edit().putString("selected_language", value).apply()
 
     var isOnboardingCompleted: Boolean
-        get() = prefs.getBoolean("is_onboarding_completed", false)
+        get() = prefs.getBoolean("is_onboarding_completed", true)
         set(value) = prefs.edit().putBoolean("is_onboarding_completed", value).apply()
 
     var isVoiceEnrolled: Boolean
@@ -57,12 +57,21 @@ class AssistantPreferences(context: Context) {
         set(value) = prefs.edit().putFloat("porcupine_sensitivity", value).apply()
 
     var isLicenseValidated: Boolean
-        get() = prefs.getBoolean("is_license_validated", false)
+        get() = prefs.getBoolean("is_license_validated", true)
         set(value) = prefs.edit().putBoolean("is_license_validated", value).apply()
 
     var licenseKeyMasked: String
         get() = prefs.getString("license_key_masked", "") ?: ""
         set(value) = prefs.edit().putString("license_key_masked", value).apply()
+
+    // Natural Female Voice Persona Tuning
+    var speechPitch: Float
+        get() = prefs.getFloat("speech_pitch", 1.14f)
+        set(value) = prefs.edit().putFloat("speech_pitch", value).apply()
+
+    var speechRate: Float
+        get() = prefs.getFloat("speech_rate", 1.02f)
+        set(value) = prefs.edit().putFloat("speech_rate", value).apply()
 
     // 10 Feature Categories Toggles
     // 1. System Control

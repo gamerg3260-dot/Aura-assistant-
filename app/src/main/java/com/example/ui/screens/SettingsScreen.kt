@@ -115,6 +115,9 @@ fun SettingsScreen(
     val porcupineSensitivity by viewModel.porcupineSensitivity.collectAsState()
     val isPorcupineActive by viewModel.isPorcupineActive.collectAsState()
     val activeWakeWordEngine by viewModel.activeWakeWordEngine.collectAsState()
+    val activeVoiceName by viewModel.activeVoiceName.collectAsState()
+    val speechPitch by viewModel.speechPitch.collectAsState()
+    val speechRate by viewModel.speechRate.collectAsState()
 
     // Expansion states for category cards
     val expandedCategories = remember {
@@ -280,6 +283,154 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Clear Voice", color = AuraError, fontSize = 12.sp)
                         }
+                    }
+                }
+            }
+        }
+
+        // Section: Natural Woman Voice & Speech Persona
+        item {
+            Text(
+                text = "VOICE PERSONA & NATURAL SPEECH",
+                color = TextMuted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            AuraGlassCard(modifier = Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(AuraPinkTertiary.copy(alpha = 0.15f))
+                                    .border(1.dp, AuraPinkTertiary.copy(alpha = 0.4f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.GraphicEq,
+                                    contentDescription = null,
+                                    tint = AuraPinkTertiary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Column {
+                                Text(
+                                    text = "Aura Natural Female Voice",
+                                    color = TextPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    text = "Neural & Wavenet High-Fidelity Female Persona",
+                                    color = TextSecondary,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+
+                    Text(
+                        text = "Aura uses Android's TextToSpeech neural synthesis with warm pitch calibration and fluent prosody for a lifelike, natural female conversational output.",
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp
+                    )
+
+                    // Active Voice Engine Chip
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(AuraDarkSurface)
+                            .border(1.dp, AuraCardBorder, RoundedCornerShape(8.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(AuraPinkTertiary)
+                            )
+                            Text(
+                                text = "Active Voice: $activeVoiceName",
+                                color = AuraPinkTertiary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    // Pitch Calibration Slider
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Female Voice Pitch", color = TextSecondary, fontSize = 12.sp)
+                            Text(String.format("%.2fx", speechPitch), color = AuraPinkTertiary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                        Slider(
+                            value = speechPitch,
+                            onValueChange = { viewModel.setSpeechPitch(it) },
+                            valueRange = 0.8f..1.5f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = AuraPinkTertiary,
+                                activeTrackColor = AuraPinkTertiary,
+                                inactiveTrackColor = AuraCardBorder
+                            )
+                        )
+                    }
+
+                    // Speech Rate Slider
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Speech Speed / Tempo", color = TextSecondary, fontSize = 12.sp)
+                            Text(String.format("%.2fx", speechRate), color = AuraPinkTertiary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                        Slider(
+                            value = speechRate,
+                            onValueChange = { viewModel.setSpeechRate(it) },
+                            valueRange = 0.7f..1.4f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = AuraPinkTertiary,
+                                activeTrackColor = AuraPinkTertiary,
+                                inactiveTrackColor = AuraCardBorder
+                            )
+                        )
+                    }
+
+                    Button(
+                        onClick = { viewModel.testNaturalWomanVoice() },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AuraPinkTertiary,
+                            contentColor = Color(0xFF070B13)
+                        )
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Preview Natural Female Voice", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
             }
@@ -663,6 +814,11 @@ fun SettingsScreen(
             }
         }
 
+        // Section: Permission Security & Management
+        item {
+            com.example.ui.components.PermissionHandlerCard()
+        }
+
         // Section: Foreground Service & Battery Optimization
         item {
             val context = LocalContext.current
@@ -670,6 +826,16 @@ fun SettingsScreen(
             val isIgnoringBattery = remember(isBgServiceEnabled) {
                 AuraVoiceService.isIgnoringBatteryOptimizations(context)
             }
+            var showSettingsPermissionSheet by remember { mutableStateOf(false) }
+
+            com.example.ui.components.PermissionHandlerSheet(
+                isVisible = showSettingsPermissionSheet,
+                onDismiss = { showSettingsPermissionSheet = false },
+                onPermissionsCompleted = {
+                    showSettingsPermissionSheet = false
+                    viewModel.toggleBackgroundService(true)
+                }
+            )
 
             Text(
                 text = "FOREGROUND SERVICE ARCHITECTURE & PERSISTENCE",
@@ -695,7 +861,7 @@ fun SettingsScreen(
                                         .clip(RoundedCornerShape(6.dp))
                                         .background(if (isBgServiceEnabled) AuraSuccess.copy(alpha = 0.2f) else AuraError.copy(alpha = 0.2f))
                                         .padding(horizontal = 6.dp, vertical = 2.dp)
-                                ) {
+                                    ) {
                                     Text(
                                         text = if (isBgServiceEnabled) "RUNNING" else "STOPPED",
                                         color = if (isBgServiceEnabled) AuraSuccess else AuraError,
@@ -713,7 +879,18 @@ fun SettingsScreen(
                         }
                         Switch(
                             checked = isBgServiceEnabled,
-                            onCheckedChange = { viewModel.toggleBackgroundService(it) },
+                            onCheckedChange = { enable ->
+                                if (enable) {
+                                    val permState = com.example.system.PermissionHandler.checkPermissions(context)
+                                    if (permState.hasAudioPermission) {
+                                        viewModel.toggleBackgroundService(true)
+                                    } else {
+                                        showSettingsPermissionSheet = true
+                                    }
+                                } else {
+                                    viewModel.toggleBackgroundService(false)
+                                }
+                            },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = AuraCyanPrimary,
                                 checkedTrackColor = AuraCyanPrimary.copy(alpha = 0.3f),
@@ -1034,13 +1211,28 @@ fun SettingsScreen(
                     visCam = it
                     prefs.toggleVisionCamera = it
                 }
-                SubToggleRow("Accessibility Screen Reading", visScreen) {
+                SubToggleRow("Accessibility Screen Reading & Siri Analysis", visScreen) {
                     visScreen = it
                     prefs.toggleVisionScreenReading = it
                 }
                 SubToggleRow("Object & Scene Description", visObj) {
                     visObj = it
                     prefs.toggleVisionObjectRecognition = it
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { viewModel.analyzeActiveScreen() },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Analyze Active Screen Now", fontSize = 12.sp, color = AuraCyanPrimary)
+                    }
                 }
             }
         }
@@ -1066,19 +1258,53 @@ fun SettingsScreen(
         item {
             CategoryToggleCard(
                 categoryIndex = 8,
-                title = "8. Security & Intruder Guard",
-                subtitle = "Anti-theft motion alarms, intruder voice-mismatch alerts",
+                title = "8. Security & Theft Guard",
+                subtitle = "Anti-theft motion sensor, charger unplug siren, voice intruder alarms",
                 icon = Icons.Default.Security,
                 isExpanded = expandedCategories[8] == true,
                 onToggleExpand = { expandedCategories[8] = !(expandedCategories[8] ?: false) }
             ) {
-                SubToggleRow("Anti-Theft Unplug Siren", secTheft) {
+                SubToggleRow("Anti-Theft Motion & Charger Siren", secTheft) {
                     secTheft = it
                     prefs.toggleSecurityAntiTheft = it
+                    if (it) viewModel.armTheftGuard() else viewModel.disarmTheftGuard()
                 }
                 SubToggleRow("Intruder Voice-Mismatch Alert Logging", secIntruder) {
                     secIntruder = it
                     prefs.toggleSecurityIntruderAlert = it
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            if (secTheft) {
+                                viewModel.disarmTheftGuard()
+                                secTheft = false
+                            } else {
+                                viewModel.armTheftGuard()
+                                secTheft = true
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (secTheft) AuraSuccess else AuraCardBorder,
+                            contentColor = if (secTheft) Color(0xFF070B13) else TextPrimary
+                        )
+                    ) {
+                        Text(if (secTheft) "Armed (Tap to Disarm)" else "Arm Theft Guard", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    OutlinedButton(
+                        onClick = { viewModel.triggerTheftTestAlarm() },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Test Siren", fontSize = 11.sp, color = AuraError)
+                    }
                 }
             }
         }
@@ -1185,13 +1411,15 @@ private fun CategoryToggleCard(
     content: @Composable () -> Unit
 ) {
     AuraGlassCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onToggleExpand)
+        modifier = Modifier.fillMaxWidth()
     ) {
         Column {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onToggleExpand)
+                    .padding(vertical = 6.dp, horizontal = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -1231,9 +1459,9 @@ private fun CategoryToggleCard(
 
                 Icon(
                     imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = null,
-                    tint = TextMuted,
-                    modifier = Modifier.size(20.dp)
+                    contentDescription = if (isExpanded) "Collapse" else "Expand",
+                    tint = AuraCyanPrimary,
+                    modifier = Modifier.size(22.dp)
                 )
             }
 
@@ -1241,7 +1469,7 @@ private fun CategoryToggleCard(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 12.dp),
+                        .padding(top = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     content()
@@ -1260,24 +1488,31 @@ private fun SubToggleRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(AuraDarkSurface.copy(alpha = 0.6f))
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (checked) AuraCyanPrimary.copy(alpha = 0.08f) else AuraDarkSurface.copy(alpha = 0.6f))
+            .border(
+                1.dp,
+                if (checked) AuraCyanPrimary.copy(alpha = 0.3f) else AuraCardBorder,
+                RoundedCornerShape(10.dp)
+            )
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = label,
-            color = TextSecondary,
+            color = if (checked) TextPrimary else TextSecondary,
             fontSize = 13.sp,
+            fontWeight = if (checked) FontWeight.SemiBold else FontWeight.Normal,
             modifier = Modifier.weight(1f)
         )
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = AuraCyanPrimary,
-                checkedTrackColor = AuraCyanPrimary.copy(alpha = 0.3f),
+                checkedThumbColor = Color(0xFF070B13),
+                checkedTrackColor = AuraCyanPrimary,
                 uncheckedThumbColor = TextMuted,
                 uncheckedTrackColor = AuraDarkSurface
             )

@@ -25,6 +25,10 @@ class AuraSpeechManager(
     private var speechRecognizer: SpeechRecognizer? = null
     private var textToSpeech: TextToSpeech? = null
     private var isTtsInitialized = false
+    private var activeOnDoneCallback: (() -> Unit)? = null
+
+    private var currentPitch: Float = 1.12f
+    private var currentSpeed: Float = 1.0f
 
     private val _isListening = MutableStateFlow(false)
     val isListening: StateFlow<Boolean> = _isListening.asStateFlow()
@@ -40,13 +44,18 @@ class AuraSpeechManager(
     }
 
     fun initTts(languageCode: String) {
-        textToSpeech?.stop()
-        textToSpeech?.shutdown()
+        try {
+            textToSpeech?.stop()
+            textToSpeech?.shutdown()
+        } catch (e: Exception) {
+            // Ignored
+        }
 
         textToSpeech = TextToSpeech(context.applicationContext) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 isTtsInitialized = true
                 applyLanguage(languageCode)
+                configureNaturalFemaleVoice()
             } else {
                 Log.w(tag, "TTS init failed with status $status")
             }
@@ -59,12 +68,65 @@ class AuraSpeechManager(
 
             override fun onDone(utteranceId: String?) {
                 _isSpeaking.value = false
+                try {
+                    activeOnDoneCallback?.invoke()
+                } catch (e: Exception) {
+                    Log.e(tag, "Error in TTS onDone callback: ${e.message}")
+                }
+                activeOnDoneCallback = null
             }
 
             override fun onError(utteranceId: String?) {
                 _isSpeaking.value = false
+                try {
+                    activeOnDoneCallback?.invoke()
+                } catch (e: Exception) {
+                    // Ignored
+                }
+                activeOnDoneCallback = null
             }
         })
+    }
+
+    /**
+     * Configures a warm, natural, fluent female voice persona ("Aura").
+     */
+    fun configureNaturalFemaleVoice(pitch: Float = 1.12f, speed: Float = 1.0f) {
+        currentPitch = pitch
+        currentSpeed = speed
+        textToSpeech?.let { tts ->
+            tts.setPitch(currentPitch)
+            tts.setSpeechRate(currentSpeed)
+
+            try {
+                val availableVoices = tts.voices
+                if (!availableVoices.isNullOrEmpty()) {
+                    // Look for high-quality female / natural neural voices
+                    val femaleVoice = availableVoices.firstOrNull { voice ->
+                        val name = voice.name.lowercase()
+                        !voice.isNetworkConnectionRequired && (
+                            name.contains("female") ||
+                            name.contains("woman") ||
+                            name.contains("sfg") ||
+                            name.contains("en-us-x-sfg") ||
+                            name.contains("hi-in-x-hie") ||
+                            name.contains("neural2") ||
+                            name.contains("wavenet")
+                        )
+                    } ?: availableVoices.firstOrNull { voice ->
+                        val name = voice.name.lowercase()
+                        name.contains("female") || name.contains("sfg") || name.contains("woman")
+                    }
+
+                    if (femaleVoice != null) {
+                        tts.voice = femaleVoice
+                        Log.d(tag, "Natural female voice configured: ${femaleVoice.name}")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(tag, "Could not enumerate voices for female persona: ${e.message}")
+            }
+        }
     }
 
     fun applyLanguage(languageCode: String) {
@@ -91,14 +153,19 @@ class AuraSpeechManager(
             Log.w(tag, "Locale $targetLocale not fully supported, falling back to US English")
             textToSpeech?.language = Locale.US
         }
+        configureNaturalFemaleVoice(currentPitch, currentSpeed)
     }
 
     fun speak(text: String, onDone: (() -> Unit)? = null) {
-        if (text.isBlank()) return
+        if (text.isBlank()) {
+            onDone?.invoke()
+            return
+        }
         stopListening()
 
+        activeOnDoneCallback = onDone
+
         if (!isTtsInitialized || textToSpeech == null) {
-            // Re-init if needed
             initTts("en")
         }
 
@@ -106,12 +173,21 @@ class AuraSpeechManager(
         val params = Bundle().apply {
             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "AURA_UTTERANCE_${System.currentTimeMillis()}")
         }
-        textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, params, "AURA_MSG")
+        val speakResult = textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, params, "AURA_MSG")
+        if (speakResult != TextToSpeech.SUCCESS) {
+            _isSpeaking.value = false
+            onDone?.invoke()
+        }
     }
 
     fun stopSpeaking() {
-        textToSpeech?.stop()
+        try {
+            textToSpeech?.stop()
+        } catch (e: Exception) {
+            // Ignored
+        }
         _isSpeaking.value = false
+        activeOnDoneCallback = null
     }
 
     fun startListening(languageCode: String = "en") {
@@ -121,6 +197,7 @@ class AuraSpeechManager(
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
             Log.w(tag, "Speech recognition not available on this device")
             _isListening.value = false
+            onErrorCallback?.invoke(SpeechRecognizer.ERROR_RECOGNIZER_BUSY)
             return
         }
 
@@ -187,6 +264,7 @@ class AuraSpeechManager(
         } catch (e: Exception) {
             Log.e(tag, "Failed to start listening", e)
             _isListening.value = false
+            onErrorCallback?.invoke(SpeechRecognizer.ERROR_RECOGNIZER_BUSY)
         }
     }
 

@@ -111,7 +111,7 @@ fun OnboardingScreen(
 
             // Step Indicator
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (i in 1..4) {
+                for (i in 1..3) {
                     val isActive = i == step
                     val isDone = i < step
                     Box(
@@ -130,7 +130,7 @@ fun OnboardingScreen(
             }
 
             Text(
-                text = "Step $step of 4",
+                text = "Step $step of 3",
                 color = TextMuted,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium
@@ -152,13 +152,7 @@ fun OnboardingScreen(
                         selectedCode = selectedLanguage,
                         onSelect = { viewModel.setTempLanguage(it) }
                     )
-                    3 -> StepLicense(
-                        licenseKey = licenseKey,
-                        error = licenseError,
-                        onKeyChange = { viewModel.setTempLicenseKey(it) },
-                        onUseDemo = { viewModel.grantDemoLicense() }
-                    )
-                    4 -> StepApiKey(
+                    3 -> StepApiKey(
                         apiKey = apiKey,
                         onKeyChange = { viewModel.setTempApiKey(it) }
                     )
@@ -170,14 +164,14 @@ fun OnboardingScreen(
         Button(
             onClick = {
                 val success = viewModel.nextOnboardingStep()
-                if (success && step == 4) {
+                if (success && step == 3) {
                     onOnboardingComplete()
                 }
             },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(54.dp),
-            shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = AuraCyanPrimary,
                 contentColor = Color(0xFF070B13)
@@ -188,7 +182,7 @@ fun OnboardingScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = if (step == 4) "Continue to Voice Enrollment" else "Next Step",
+                    text = if (step == 3) "Start Aura Assistant" else "Next Step",
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp
                 )

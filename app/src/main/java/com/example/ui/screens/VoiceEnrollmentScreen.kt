@@ -1,6 +1,12 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -65,6 +71,14 @@ fun VoiceEnrollmentScreen(
     val listeningState by viewModel.listeningState.collectAsState()
     val statusMsg by viewModel.statusMessage.collectAsState()
     val audioRms by viewModel.audioRms.collectAsState()
+    val context = LocalContext.current
+    val micLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            viewModel.recordEnrollmentPhrase()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -230,7 +244,17 @@ fun VoiceEnrollmentScreen(
         // Action Buttons
         if (!isEnrolled) {
             Button(
-                onClick = { viewModel.recordEnrollmentPhrase() },
+                onClick = {
+                    val hasMic = ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.RECORD_AUDIO
+                    ) == PackageManager.PERMISSION_GRANTED
+                    if (hasMic) {
+                        viewModel.recordEnrollmentPhrase()
+                    } else {
+                        micLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp),

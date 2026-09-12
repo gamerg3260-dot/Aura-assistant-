@@ -2,7 +2,6 @@ package com.example
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -14,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.core.content.ContextCompat
 import com.example.service.AuraVoiceService
+import com.example.system.PermissionHandler
 import com.example.ui.MainScreen
 import com.example.ui.AuraViewModel
 import com.example.ui.theme.AuraTheme
@@ -27,15 +27,12 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         val prefs = (application as AuraApplication).preferences
-        val hasMic = ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.RECORD_AUDIO
-        ) == PackageManager.PERMISSION_GRANTED
-        if (prefs.isBackgroundServiceRunning && hasMic) {
+        val permissionState = PermissionHandler.checkPermissions(this)
+        if (prefs.isBackgroundServiceRunning && permissionState.hasAudioPermission) {
             try {
                 AuraVoiceService.start(this)
             } catch (e: Exception) {
-                // Logged or handled
+                // Logged or handled safely
             }
         }
 
@@ -82,16 +79,7 @@ fun AuraRootApp(viewModel: AuraViewModel) {
     }
 
     LaunchedEffect(Unit) {
-        val permissionsToRequest = mutableListOf(
-            Manifest.permission.RECORD_AUDIO
-        )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
-        }
-
-        val missing = permissionsToRequest.filter {
-            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
-        }
+        val missing = PermissionHandler.getMissingRuntimePermissions(context)
         if (missing.isNotEmpty()) {
             permissionLauncher.launch(missing.toTypedArray())
         }

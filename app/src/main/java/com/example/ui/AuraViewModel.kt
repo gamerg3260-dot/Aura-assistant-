@@ -1,6 +1,7 @@
 package com.example.ui
 
 import android.app.Application
+import android.speech.SpeechRecognizer
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.AuraApplication
@@ -11,9 +12,12 @@ import com.example.data.model.CalendarEventItem
 import com.example.data.model.DeviceStats
 import com.example.data.model.LanguageOption
 import com.example.data.model.ToolExecutionResult
+import com.example.security.TheftIncident
 import com.example.service.AuraAccessibilityService
 import com.example.service.AuraVoiceService
+import com.example.service.ScreenAnalysisData
 import com.example.voice.AuraSpeechManager
+import com.example.voice.GeminiSpokenOutputManager
 import com.example.voice.VoiceprintEngine
 import com.example.voice.VoiceprintResult
 import kotlinx.coroutines.Dispatchers
@@ -119,13 +123,123 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
     private val _isBackgroundServiceEnabled = MutableStateFlow(prefs.isBackgroundServiceRunning)
     val isBackgroundServiceEnabled: StateFlow<Boolean> = _isBackgroundServiceEnabled.asStateFlow()
 
+    // Voice Persona Configuration
+    private val _speechPitch = MutableStateFlow(prefs.speechPitch)
+    val speechPitch: StateFlow<Float> = _speechPitch.asStateFlow()
+
+    private val _speechRate = MutableStateFlow(prefs.speechRate)
+    val speechRate: StateFlow<Float> = _speechRate.asStateFlow()
+
+    val activeVoiceName: StateFlow<String> = app.spokenOutputManager.activeVoiceName
+
+    fun setSpeechPitch(pitch: Float) {
+        _speechPitch.value = pitch
+        prefs.speechPitch = pitch
+        app.spokenOutputManager.setPitch(pitch)
+    }
+
+    fun setSpeechRate(rate: Float) {
+        _speechRate.value = rate
+        prefs.speechRate = rate
+        app.spokenOutputManager.setSpeechRate(rate)
+    }
+
+    // Theft Guard State
+    val isTheftGuardArmed: StateFlow<Boolean> = app.theftGuardManager.isArmed
+    val isTheftAlarmTriggered: StateFlow<Boolean> = app.theftGuardManager.isAlarmTriggered
+    val theftAlarmReason: StateFlow<String> = app.theftGuardManager.alarmReason
+    val theftIncidents: StateFlow<List<TheftIncident>> = app.theftGuardManager.incidents
+    val theftSensitivity: StateFlow<Float> = app.theftGuardManager.motionSensitivity
+
+    // Screen Analysis State (Siri-style)
+    private val _lastScreenAnalysis = MutableStateFlow<ScreenAnalysisData?>(null)
+    val lastScreenAnalysis: StateFlow<ScreenAnalysisData?> = _lastScreenAnalysis.asStateFlow()
+
+    fun setTheftMotionSensitivity(value: Float) {
+        app.theftGuardManager.setSensitivity(value)
+    }
+
+    fun toggleTheftGuard(): Boolean {
+        val newState = app.theftGuardManager.toggleArm()
+        prefs.toggleSecurityAntiTheft = newState
+        return newState
+    }
+
+    fun armTheftGuard() {
+        app.theftGuardManager.armGuard()
+        prefs.toggleSecurityAntiTheft = true
+    }
+
+    fun disarmTheftGuard() {
+        app.theftGuardManager.disarmGuard()
+        prefs.toggleSecurityAntiTheft = false
+    }
+
+    fun stopTheftAlarm() {
+        app.theftGuardManager.stopAlarm()
+    }
+
+    fun triggerTheftTestAlarm() {
+        app.theftGuardManager.triggerAlarm(
+            type = "MANUAL_TEST",
+            title = "Test Intruder Alarm",
+            details = "Manual security drill triggered by user."
+        )
+    }
+
+    fun analyzeActiveScreen() {
+        viewModelScope.launch {
+            _listeningState.value = AssistantListeningState.PROCESSING_LLM
+            _statusMessage.value = "Analyzing screen like Siri..."
+
+            val analysis = AuraAccessibilityService.analyzeCurrentScreen(getApplication())
+            _lastScreenAnalysis.value = analysis
+
+            val speechText = if (!analysis.isEnabled) {
+                "Screen analysing ke liye Aura Accessibility Service on hona zaroori hai. Kripya Settings se Aura accessibility enable karein."
+            } else if (analysis.items.isNotEmpty()) {
+                "Aapki screen par abhi ${analysis.appName} khula hai. Isme mukhya roop se: ${analysis.items.take(4).joinToString(", ")} dikh raha hai."
+            } else {
+                "${analysis.appName} screen active hai, lekin isme koi text content nahi mila."
+            }
+
+            _lastAssistantReply.value = speechText
+            _lastToolExecutionSource.value = "Siri Screen Analyzer"
+            _listeningState.value = AssistantListeningState.SPEAKING
+            _statusMessage.value = "Screen analysis complete"
+
+            app.spokenOutputManager.speakGeminiResponse(
+                rawLlmResponse = speechText,
+                onStart = {
+                    _listeningState.value = AssistantListeningState.SPEAKING
+                },
+                onComplete = {
+                    _listeningState.value = AssistantListeningState.STANDBY
+                    _statusMessage.value = "Ready"
+                }
+            )
+        }
+    }
+
     // Speech & TTS Manager
     private var speechManager: AuraSpeechManager? = null
+    val spokenOutputManager: GeminiSpokenOutputManager get() = app.spokenOutputManager
     private var audioLoopJob: Job? = null
 
     init {
         initSpeechManager()
+        observeSpokenRms()
         refreshDeviceData()
+    }
+
+    private fun observeSpokenRms() {
+        viewModelScope.launch {
+            app.spokenOutputManager.speechRms.collect { rms ->
+                if (_listeningState.value == AssistantListeningState.SPEAKING) {
+                    _audioRms.value = rms
+                }
+            }
+        }
     }
 
     private fun initSpeechManager() {
@@ -141,7 +255,16 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
                 viewModelScope.launch {
                     if (_listeningState.value == AssistantListeningState.SPEECH_LISTENING) {
                         _listeningState.value = AssistantListeningState.STANDBY
-                        _statusMessage.value = "Tap orb or say '${prefs.customWakeWord}' to speak"
+                        val errorText = when (error) {
+                            SpeechRecognizer.ERROR_AUDIO -> "Audio recording error. Check mic permission."
+                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Mic permission denied. Allow microphone in app settings."
+                            SpeechRecognizer.ERROR_NO_MATCH -> "No speech recognized. Please try again."
+                            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Speech timed out. Tap mic to speak."
+                            SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network timeout. Check connection."
+                            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Mic busy. Please tap orb again."
+                            else -> "Mic idle. Tap orb or say '${prefs.customWakeWord}' to speak"
+                        }
+                        _statusMessage.value = errorText
                     }
                 }
             }
@@ -186,31 +309,16 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
             2 -> {
                 prefs.selectedLanguageCode = _tempLanguage.value
                 speechManager?.applyLanguage(_tempLanguage.value)
+                prefs.isLicenseValidated = true
                 _onboardingStep.value = 3
                 return true
             }
             3 -> {
-                val key = _tempLicenseKey.value.trim()
-                if (key.isBlank()) {
-                    // Auto provision demo access key for immediate evaluation
-                    _tempLicenseKey.value = "AURA-PRO-DEMO-2026"
-                }
-                val valid = validateLicenseKey(_tempLicenseKey.value)
-                if (valid) {
-                    prefs.isLicenseValidated = true
-                    prefs.licenseKeyMasked = _tempLicenseKey.value.take(4) + "••••••••"
-                    _onboardingStep.value = 4
-                    return true
-                } else {
-                    _licenseError.value = "Invalid license key. Format: AURA-PRO-XXXX or click Demo Access."
-                    return false
-                }
-            }
-            4 -> {
                 val key = _tempApiKey.value.trim()
                 if (key.isNotBlank()) {
                     keystore.encryptAndStore("user_llm_api_key", key)
                 }
+                prefs.isLicenseValidated = true
                 prefs.isOnboardingCompleted = true
                 return true
             }
@@ -314,6 +422,7 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
             } else {
                 _listeningState.value = AssistantListeningState.VOICE_MISMATCH_ALERT
                 _statusMessage.value = "Voice Mismatch! Unrecognized speaker (${(result.similarityScore * 100).toInt()}%)."
+                app.theftGuardManager.onVoiceMismatchDetected(result.similarityScore)
                 speechManager?.speak("Voice mismatch. Access restricted.")
                 delay(2000)
                 _listeningState.value = AssistantListeningState.STANDBY
@@ -356,6 +465,7 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
             if (!verification.isVerified) {
                 _listeningState.value = AssistantListeningState.VOICE_MISMATCH_ALERT
                 _statusMessage.value = "Voice mismatch! Command ignored for security."
+                app.theftGuardManager.onVoiceMismatchDetected(verification.similarityScore)
                 delay(2000)
                 _listeningState.value = AssistantListeningState.STANDBY
                 return@launch
@@ -405,12 +515,29 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
                 _statusMessage.value = "Action: ${result.toolCallRequest.functionName}"
             }
 
-            // Speak response aloud via TTS
+            // Speak response aloud via GeminiSpokenOutputManager
             _listeningState.value = AssistantListeningState.SPEAKING
             _statusMessage.value = "Aura speaking..."
-            speechManager?.speak(result.spokenResponse) {
-                _listeningState.value = AssistantListeningState.STANDBY
-                _statusMessage.value = "Ready"
+            app.spokenOutputManager.speakGeminiResponse(
+                rawLlmResponse = result.spokenResponse,
+                onStart = {
+                    _listeningState.value = AssistantListeningState.SPEAKING
+                },
+                onComplete = {
+                    _listeningState.value = AssistantListeningState.STANDBY
+                    _statusMessage.value = "Ready"
+                }
+            )
+
+            // Save memory if tool was save_memory
+            if (result.toolCallRequest?.functionName == "save_memory") {
+                val key = result.toolCallRequest.arguments["key"]?.toString()
+                    ?: result.toolCallRequest.arguments["arg1"]?.toString() ?: "Note"
+                val value = result.toolCallRequest.arguments["value"]?.toString()
+                    ?: result.toolCallRequest.arguments["arg2"]?.toString() ?: ""
+                if (value.isNotBlank()) {
+                    app.database.memoryDao().insertMemory(MemoryEntity(key = key, value = value))
+                }
             }
 
             // Save to Room DB Conversation History
@@ -536,13 +663,32 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopAssistantSpeaking() {
+        app.spokenOutputManager.stop()
         speechManager?.stopSpeaking()
         _listeningState.value = AssistantListeningState.STANDBY
         _statusMessage.value = "Ready"
     }
 
+    fun testNaturalWomanVoice() {
+        val sample = "Hello! I am Aura, your personal AI assistant. My voice is tuned to a natural, warm feminine tone. How can I help you today?"
+        _lastAssistantReply.value = sample
+        _listeningState.value = AssistantListeningState.SPEAKING
+        _statusMessage.value = "Playing Natural Woman Voice sample..."
+        app.spokenOutputManager.speakGeminiResponse(
+            rawLlmResponse = sample,
+            onStart = {
+                _listeningState.value = AssistantListeningState.SPEAKING
+            },
+            onComplete = {
+                _listeningState.value = AssistantListeningState.STANDBY
+                _statusMessage.value = "Ready"
+            }
+        )
+    }
+
     override fun onCleared() {
         super.onCleared()
+        app.spokenOutputManager.destroy()
         speechManager?.destroy()
     }
 }

@@ -150,34 +150,194 @@ class DeviceController(private val context: Context) {
         }
     }
 
+    fun adjustVolume(increase: Boolean): ToolExecutionResult {
+        return try {
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val direction = if (increase) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
+            audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, AudioManager.FLAG_SHOW_UI)
+            ToolExecutionResult("Volume Control", if (increase) "Volume increased" else "Volume decreased", true)
+        } catch (e: Exception) {
+            ToolExecutionResult("Volume Control", "Failed to adjust volume: ${e.message}", false)
+        }
+    }
+
+    fun muteVolume(): ToolExecutionResult {
+        return try {
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, AudioManager.FLAG_SHOW_UI)
+            ToolExecutionResult("Volume Control", "Media volume muted", true)
+        } catch (e: Exception) {
+            ToolExecutionResult("Volume Control", "Failed to mute: ${e.message}", false)
+        }
+    }
+
+    fun setAlarm(hour: Int, minute: Int, message: String = "Aura Assistant Alarm"): ToolExecutionResult {
+        return try {
+            val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
+                putExtra(AlarmClock.EXTRA_HOUR, hour)
+                putExtra(AlarmClock.EXTRA_MINUTES, minute)
+                putExtra(AlarmClock.EXTRA_MESSAGE, message)
+                putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            val timeFormatted = String.format(Locale.getDefault(), "%02d:%02d", hour, minute)
+            ToolExecutionResult("Set Alarm", "Alarm set for $timeFormatted ($message)", true)
+        } catch (e: Exception) {
+            ToolExecutionResult("Set Alarm", "Requested alarm for $hour:$minute: ${e.message}", false)
+        }
+    }
+
     fun launchApp(appNameOrPackage: String): ToolExecutionResult {
-        val pkg = when (appNameOrPackage.lowercase().trim()) {
+        val cleanName = appNameOrPackage.lowercase().trim()
+        val pkg = when (cleanName) {
             "youtube" -> "com.google.android.youtube"
             "spotify" -> "com.spotify.music"
             "whatsapp" -> "com.whatsapp"
             "camera" -> "com.google.android.GoogleCamera"
             "settings" -> "com.android.settings"
             "chrome", "browser" -> "com.android.chrome"
+            "calculator", "calc" -> "com.google.android.calculator"
+            "maps", "google maps", "map" -> "com.google.android.apps.maps"
+            "gmail", "mail", "email" -> "com.google.android.gm"
+            "clock", "alarm" -> "com.google.android.deskclock"
+            "gallery", "photos" -> "com.google.android.apps.photos"
+            "messages", "message", "sms" -> "com.google.android.apps.messaging"
+            "play store", "store" -> "com.android.vending"
+            "files", "file manager" -> "com.google.android.documentsui"
+            "telegram" -> "org.telegram.messenger"
+            "instagram" -> "com.instagram.android"
             else -> appNameOrPackage
         }
 
         return try {
             val pm = context.packageManager
-            val launchIntent = pm.getLaunchIntentForPackage(pkg)
+            var launchIntent = pm.getLaunchIntentForPackage(pkg)
+
+            if (launchIntent == null) {
+                // Fallbacks for generic apps
+                launchIntent = when (cleanName) {
+                    "camera" -> Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE)
+                    "calculator", "calc" -> Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_CALCULATOR)
+                    "settings" -> Intent(Settings.ACTION_SETTINGS)
+                    "maps", "map" -> Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q="))
+                    "browser", "chrome" -> Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com"))
+                    "phone", "dialer" -> Intent(Intent.ACTION_DIAL)
+                    else -> null
+                }
+            }
+
+            if (launchIntent == null) {
+                // Search installed apps for matching label
+                val installed = pm.getInstalledApplications(0)
+                for (appInfo in installed) {
+                    val label = pm.getApplicationLabel(appInfo).toString().lowercase()
+                    if (label.contains(cleanName) || cleanName.contains(label)) {
+                        launchIntent = pm.getLaunchIntentForPackage(appInfo.packageName)
+                        if (launchIntent != null) break
+                    }
+                }
+            }
+
             if (launchIntent != null) {
                 launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 context.startActivity(launchIntent)
                 ToolExecutionResult("App Launcher", "Opening $appNameOrPackage", true)
             } else {
-                // Try searching or opening Play Store
                 val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=$appNameOrPackage")).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(webIntent)
-                ToolExecutionResult("App Launcher", "Navigating to $appNameOrPackage", true)
+                ToolExecutionResult("App Launcher", "Searching web for $appNameOrPackage", true)
             }
         } catch (e: Exception) {
             ToolExecutionResult("App Launcher", "Could not launch $appNameOrPackage: ${e.message}", false)
+        }
+    }
+
+    fun openMaps(destination: String): ToolExecutionResult {
+        return try {
+            val uri = Uri.parse("geo:0,0?q=${Uri.encode(destination)}")
+            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            ToolExecutionResult("Google Maps", "Navigating to $destination", true)
+        } catch (e: Exception) {
+            ToolExecutionResult("Google Maps", "Could not open Maps: ${e.message}", false)
+        }
+    }
+
+    fun openBluetoothSettings(): ToolExecutionResult {
+        return try {
+            val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            ToolExecutionResult("System Settings", "Opened Bluetooth settings", true)
+        } catch (e: Exception) {
+            openWirelessSettings()
+        }
+    }
+
+    fun openWifiSettings(): ToolExecutionResult {
+        return try {
+            val intent = Intent(Settings.ACTION_WIFI_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            ToolExecutionResult("System Settings", "Opened Wi-Fi settings", true)
+        } catch (e: Exception) {
+            openWirelessSettings()
+        }
+    }
+
+    fun openDisplaySettings(): ToolExecutionResult {
+        return try {
+            val intent = Intent(Settings.ACTION_DISPLAY_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            ToolExecutionResult("System Settings", "Opened Display settings", true)
+        } catch (e: Exception) {
+            openWirelessSettings()
+        }
+    }
+
+    fun openSoundSettings(): ToolExecutionResult {
+        return try {
+            val intent = Intent(Settings.ACTION_SOUND_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            ToolExecutionResult("System Settings", "Opened Sound settings", true)
+        } catch (e: Exception) {
+            openWirelessSettings()
+        }
+    }
+
+    fun openBatterySettings(): ToolExecutionResult {
+        return try {
+            val intent = Intent(Intent.ACTION_POWER_USAGE_SUMMARY).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            ToolExecutionResult("System Settings", "Opened Battery status screen", true)
+        } catch (e: Exception) {
+            openWirelessSettings()
+        }
+    }
+
+    fun performNavigationAction(action: String): ToolExecutionResult {
+        val success = com.example.service.AuraAccessibilityService.performGlobalSystemAction(action)
+        return if (success) {
+            ToolExecutionResult("System Navigation", "Executed $action", true)
+        } else {
+            ToolExecutionResult(
+                "System Navigation",
+                "To use navigation commands, please enable Aura AI in Android Accessibility settings",
+                false
+            )
         }
     }
 

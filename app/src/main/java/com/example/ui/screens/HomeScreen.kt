@@ -1,7 +1,12 @@
 package com.example.ui.screens
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -40,13 +45,21 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SdCard
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -101,6 +114,50 @@ fun HomeScreen(
     val executionSource by viewModel.lastToolExecutionSource.collectAsState()
     val audioRms by viewModel.audioRms.collectAsState()
     val isEnrolled by viewModel.isVoiceEnrolled.collectAsState()
+    val isTheftArmed by viewModel.isTheftGuardArmed.collectAsState()
+    val isTheftAlarmTriggered by viewModel.isTheftAlarmTriggered.collectAsState()
+    val theftAlarmReason by viewModel.theftAlarmReason.collectAsState()
+    val lastScreenAnalysis by viewModel.lastScreenAnalysis.collectAsState()
+
+    val context = LocalContext.current
+    var showPermissionSheet by remember { mutableStateOf(false) }
+    var permissionState by remember { mutableStateOf(com.example.system.PermissionHandler.checkPermissions(context)) }
+
+    val refreshPermissions = {
+        permissionState = com.example.system.PermissionHandler.checkPermissions(context)
+    }
+
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        refreshPermissions()
+        if (results[Manifest.permission.RECORD_AUDIO] == true) {
+            viewModel.triggerWakeWordAndListen(isOwner = true)
+        }
+    }
+
+    val onMicAction: () -> Unit = {
+        refreshPermissions()
+        if (permissionState.hasAudioPermission) {
+            if (listeningState == AssistantListeningState.SPEAKING) {
+                viewModel.stopAssistantSpeaking()
+            } else {
+                viewModel.triggerWakeWordAndListen(isOwner = true)
+            }
+        } else {
+            showPermissionSheet = true
+        }
+    }
+
+    com.example.ui.components.PermissionHandlerSheet(
+        isVisible = showPermissionSheet,
+        onDismiss = { showPermissionSheet = false },
+        onPermissionsCompleted = {
+            showPermissionSheet = false
+            refreshPermissions()
+            viewModel.triggerWakeWordAndListen(isOwner = true)
+        }
+    )
 
     var textInput by remember { mutableStateOf("") }
 
@@ -206,13 +263,7 @@ fun HomeScreen(
                     VoiceOrb(
                         state = listeningState,
                         audioRms = audioRms,
-                        onClick = {
-                            if (listeningState == AssistantListeningState.SPEAKING) {
-                                viewModel.stopAssistantSpeaking()
-                            } else {
-                                viewModel.triggerWakeWordAndListen(isOwner = true)
-                            }
-                        }
+                        onClick = onMicAction
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -235,6 +286,315 @@ fun HomeScreen(
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 2.dp)
                     )
+                }
+            }
+        }
+
+        // Active Emergency Theft Guard Alarm Banner
+        if (isTheftAlarmTriggered) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(Color(0xFF7F1D1D))
+                        .border(2.dp, Color(0xFFEF4444), RoundedCornerShape(18.dp))
+                        .padding(16.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = "Theft Alarm Alert",
+                                tint = Color.White,
+                                modifier = Modifier.size(30.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "THEFT GUARD ALARM ACTIVE!",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
+                                )
+                                Text(
+                                    text = theftAlarmReason,
+                                    color = Color.White.copy(alpha = 0.9f),
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                        Button(
+                            onClick = { viewModel.stopTheftAlarm() },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFEF4444),
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.VolumeOff, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("SILENCE & STOP ALARM", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Siri-Style Screen Analysing Card
+        item {
+            val context = LocalContext.current
+            val isAccessibilityEnabled = remember {
+                com.example.service.AuraAccessibilityService.isServiceConnected
+            }
+
+            AuraGlassCard(modifier = Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(AuraCyanPrimary.copy(alpha = 0.15f))
+                                    .border(1.dp, AuraCyanPrimary.copy(alpha = 0.5f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Visibility,
+                                    contentDescription = null,
+                                    tint = AuraCyanPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            Column {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        text = "Screen Analysing (Siri Mode)",
+                                        color = TextPrimary,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(
+                                                if (isAccessibilityEnabled) AuraSuccess.copy(alpha = 0.2f)
+                                                else AuraWarning.copy(alpha = 0.2f)
+                                            )
+                                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                                    ) {
+                                        Text(
+                                            text = if (isAccessibilityEnabled) "READY" else "NEEDS PERMISSION",
+                                            color = if (isAccessibilityEnabled) AuraSuccess else AuraWarning,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = "Inspects active app screen & answers Siri questions aloud.",
+                                    color = TextMuted,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Display last screen analysis result if available
+                    if (lastScreenAnalysis != null) {
+                        val analysis = lastScreenAnalysis!!
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(AuraDarkSurface)
+                                .padding(10.dp)
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    text = "Current App: ${analysis.appName}",
+                                    color = AuraCyanBright,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                                Text(
+                                    text = analysis.aiSummary,
+                                    color = TextPrimary,
+                                    fontSize = 12.sp,
+                                    lineHeight = 16.sp
+                                )
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { viewModel.analyzeActiveScreen() },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AuraCyanPrimary,
+                                contentColor = Color(0xFF070B13)
+                            )
+                        ) {
+                            Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Analyze Screen Now", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        if (!isAccessibilityEnabled) {
+                            Button(
+                                onClick = {
+                                    try {
+                                        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        })
+                                    } catch (e: Exception) { }
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = AuraCardBorder,
+                                    contentColor = TextPrimary
+                                )
+                            ) {
+                                Text("Enable", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Anti-Theft Guard Security Card
+        item {
+            AuraGlassCard(modifier = Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { viewModel.toggleTheftGuard() }
+                            .padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (isTheftArmed) AuraSuccess.copy(alpha = 0.15f)
+                                        else AuraCardBorder.copy(alpha = 0.3f)
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (isTheftArmed) AuraSuccess.copy(alpha = 0.5f)
+                                        else AuraCardBorder,
+                                        CircleShape
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Shield,
+                                    contentDescription = null,
+                                    tint = if (isTheftArmed) AuraSuccess else TextMuted,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            Column {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        text = "Theft Guard Protection",
+                                        color = TextPrimary,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(
+                                                if (isTheftArmed) AuraSuccess.copy(alpha = 0.2f)
+                                                else AuraCardBorder.copy(alpha = 0.4f)
+                                            )
+                                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                                    ) {
+                                        Text(
+                                            text = if (isTheftArmed) "ARMED" else "DISARMED",
+                                            color = if (isTheftArmed) AuraSuccess else TextMuted,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = if (isTheftArmed)
+                                        "Motion sensor + Charger removal + Intruder voice alarm ACTIVE"
+                                    else
+                                        "Alarm is off. Tap toggle to arm security.",
+                                    color = TextMuted,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            }
+                        }
+
+                        Switch(
+                            checked = isTheftArmed,
+                            onCheckedChange = { viewModel.toggleTheftGuard() },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = AuraSuccess,
+                                checkedTrackColor = AuraSuccess.copy(alpha = 0.3f),
+                                uncheckedThumbColor = TextMuted,
+                                uncheckedTrackColor = AuraCardBorder
+                            )
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { viewModel.triggerTheftTestAlarm() },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isTheftArmed) AuraError.copy(alpha = 0.25f) else AuraCardBorder,
+                                contentColor = if (isTheftArmed) AuraError else TextPrimary
+                            )
+                        ) {
+                            Icon(Icons.Default.NotificationsActive, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Test Siren & Strobe Drill", fontSize = 12.sp)
+                        }
+                    }
                 }
             }
         }
@@ -639,9 +999,58 @@ fun HomeScreen(
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
                     CommandChip(
+                        title = "Screen Analysing",
+                        icon = Icons.Default.Visibility,
+                        onClick = { viewModel.analyzeActiveScreen() }
+                    )
+                }
+                item {
+                    CommandChip(
+                        title = "Theft Guard",
+                        icon = Icons.Default.Shield,
+                        onClick = { viewModel.toggleTheftGuard() }
+                    )
+                }
+                item {
+                    CommandChip(
                         title = "Listen",
                         icon = Icons.Default.Mic,
-                        onClick = { viewModel.triggerWakeWordAndListen(isOwner = true) }
+                        onClick = onMicAction
+                    )
+                }
+                item {
+                    CommandChip(
+                        title = "Torch / Flashlight",
+                        icon = Icons.Default.FlashlightOn,
+                        onClick = { viewModel.submitTextCommand("Toggle flashlight", isOwner = true) }
+                    )
+                }
+                item {
+                    CommandChip(
+                        title = "Toggle Wi-Fi",
+                        icon = Icons.Default.Launch,
+                        onClick = { viewModel.submitTextCommand("Toggle Wi-Fi", isOwner = true) }
+                    )
+                }
+                item {
+                    CommandChip(
+                        title = "Toggle Bluetooth",
+                        icon = Icons.Default.Launch,
+                        onClick = { viewModel.submitTextCommand("Toggle Bluetooth", isOwner = true) }
+                    )
+                }
+                item {
+                    CommandChip(
+                        title = "Brightness 80%",
+                        icon = Icons.Default.Visibility,
+                        onClick = { viewModel.submitTextCommand("Set brightness to 80 percent", isOwner = true) }
+                    )
+                }
+                item {
+                    CommandChip(
+                        title = "Set Alarm",
+                        icon = Icons.Default.NotificationsActive,
+                        onClick = { viewModel.submitTextCommand("Set alarm for 7:00 AM", isOwner = true) }
                     )
                 }
                 item {
@@ -653,9 +1062,30 @@ fun HomeScreen(
                 }
                 item {
                     CommandChip(
-                        title = "Flashlight",
-                        icon = Icons.Default.FlashlightOn,
-                        onClick = { viewModel.submitTextCommand("Toggle flashlight", isOwner = true) }
+                        title = "Volume Up",
+                        icon = Icons.Default.VolumeUp,
+                        onClick = { viewModel.submitTextCommand("Volume badhao", isOwner = true) }
+                    )
+                }
+                item {
+                    CommandChip(
+                        title = "Play YouTube",
+                        icon = Icons.Default.PlayArrow,
+                        onClick = { viewModel.submitTextCommand("Play music on YouTube", isOwner = true) }
+                    )
+                }
+                item {
+                    CommandChip(
+                        title = "Recent Apps",
+                        icon = Icons.Default.Assistant,
+                        onClick = { viewModel.submitTextCommand("Recent apps dikhao", isOwner = true) }
+                    )
+                }
+                item {
+                    CommandChip(
+                        title = "Go Home",
+                        icon = Icons.Default.Assistant,
+                        onClick = { viewModel.submitTextCommand("Home jao", isOwner = true) }
                     )
                 }
                 item {
@@ -663,13 +1093,6 @@ fun HomeScreen(
                         title = "Device Health",
                         icon = Icons.Default.BatteryFull,
                         onClick = { viewModel.submitTextCommand("Check my battery and storage status", isOwner = true) }
-                    )
-                }
-                item {
-                    CommandChip(
-                        title = "Vol 80%",
-                        icon = Icons.Default.VolumeUp,
-                        onClick = { viewModel.submitTextCommand("Set volume to 80", isOwner = true) }
                     )
                 }
                 item {
@@ -706,6 +1129,30 @@ fun HomeScreen(
                             unfocusedContainerColor = AuraDarkSurface
                         )
                     )
+
+                    IconButton(
+                        onClick = onMicAction,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (listeningState == AssistantListeningState.SPEECH_LISTENING)
+                                    AuraCyanBright
+                                else
+                                    AuraDarkSurface
+                            )
+                            .border(1.dp, AuraCyanPrimary, CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Mic,
+                            contentDescription = "Voice Input",
+                            tint = if (listeningState == AssistantListeningState.SPEECH_LISTENING)
+                                Color(0xFF070B13)
+                            else
+                                AuraCyanPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
 
                     IconButton(
                         onClick = {
