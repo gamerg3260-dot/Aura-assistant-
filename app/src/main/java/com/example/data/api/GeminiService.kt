@@ -47,9 +47,18 @@ class GeminiService(
      */
     suspend fun validateApiKey(keyToTest: String): Result<String> = withContext(Dispatchers.IO) {
         val cleanKey = keyToTest.trim()
+            .removeSurrounding("\"", "\"")
+            .removeSurrounding("'", "'")
+            .replace("\n", "")
+            .replace("\r", "")
+            .trim()
+
         if (cleanKey.isBlank()) {
+            Log.w(tag, "[API_KEY_VALIDATION] Empty API key provided.")
             return@withContext Result.failure(IllegalArgumentException("API key cannot be empty."))
         }
+
+        Log.i(tag, "[API_KEY_VALIDATION] Initiating validation for key '${cleanKey.take(6)}...${cleanKey.takeLast(4)}' (len=${cleanKey.length})")
 
         try {
             val pingRequest = GeminiGenerateContentRequest(
@@ -65,18 +74,68 @@ class GeminiService(
                 )
             )
 
+            // Primary attempt: gemini-1.5-flash:generateContent
             val response = apiService.generateContent(apiKey = cleanKey, request = pingRequest)
-            if (response.isSuccessful && response.body() != null) {
-                Result.success("API key validated successfully.")
-            } else {
-                val errorCode = response.code()
-                val errorBody = response.errorBody()?.string() ?: ""
-                Log.w(tag, "API Key validation failed with HTTP $errorCode: $errorBody")
-                Result.failure(Exception("Invalid API key — please check and try again."))
+            val httpCode = response.code()
+            val rawErrorBody = response.errorBody()?.string() ?: ""
+            val responseBody = response.body()
+
+            Log.i(
+                tag,
+                "[API_KEY_VALIDATION] Primary endpoint 'v1beta/models/gemini-1.5-flash:generateContent' returned HTTP $httpCode | Successful=${response.isSuccessful} | ResponseBody=$responseBody | ErrorBody=$rawErrorBody"
+            )
+
+            // Case 1: HTTP 200 OK
+            if (response.isSuccessful) {
+                val apiError = responseBody?.error
+                if (apiError != null && (apiError.status == "INVALID_ARGUMENT" || apiError.message?.contains("API_KEY_INVALID", ignoreCase = true) == true)) {
+                    Log.w(tag, "[API_KEY_VALIDATION] HTTP 200 returned API error: ${apiError.message}")
+                    return@withContext Result.failure(Exception("API Key Invalid: ${apiError.message}"))
+                }
+                Log.i(tag, "[API_KEY_VALIDATION] SUCCESS: Key validated via gemini-1.5-flash endpoint.")
+                return@withContext Result.success("API key verified and stored securely.")
             }
+
+            // Case 2: HTTP 429 Too Many Requests / Quota Exceeded
+            // Rate limiting means Google accepted the key as valid, but quota limit is hit. Key IS VALID!
+            if (httpCode == 429 || rawErrorBody.contains("RESOURCE_EXHAUSTED", ignoreCase = true) || rawErrorBody.contains("Quota exceeded", ignoreCase = true)) {
+                Log.i(tag, "[API_KEY_VALIDATION] SUCCESS (Rate Limited): HTTP $httpCode returned quota limit. Key is valid.")
+                return@withContext Result.success("API key verified (Quota limit active).")
+            }
+
+            // Case 3: HTTP 404 (Model Not Found) or 503 (Server Overload) -> Fallback to GET v1beta/models
+            if (httpCode == 404 || httpCode >= 500) {
+                Log.w(tag, "[API_KEY_VALIDATION] Primary model endpoint returned HTTP $httpCode. Attempting fallback validation via GET 'v1beta/models'...")
+                val modelsResponse = apiService.listModels(apiKey = cleanKey)
+                val modelsCode = modelsResponse.code()
+                val modelsErr = modelsResponse.errorBody()?.string() ?: ""
+
+                Log.i(tag, "[API_KEY_VALIDATION] Fallback 'v1beta/models' returned HTTP $modelsCode | Successful=${modelsResponse.isSuccessful} | Error=$modelsErr")
+
+                if (modelsResponse.isSuccessful || modelsCode == 429) {
+                    Log.i(tag, "[API_KEY_VALIDATION] SUCCESS: Key validated via fallback models endpoint.")
+                    return@withContext Result.success("API key verified via models endpoint.")
+                } else {
+                    Log.w(tag, "[API_KEY_VALIDATION] Key rejected by models endpoint HTTP $modelsCode: $modelsErr")
+                    return@withContext Result.failure(Exception("Invalid API key (HTTP $modelsCode): $modelsErr"))
+                }
+            }
+
+            // Case 4: HTTP 400, 401, 403 (Invalid Key / Unauthorized)
+            Log.w(tag, "[API_KEY_VALIDATION] Key rejected by Gemini API with HTTP $httpCode: $rawErrorBody")
+            val userFriendlyMessage = when {
+                rawErrorBody.contains("API_KEY_INVALID", ignoreCase = true) || rawErrorBody.contains("API key not valid", ignoreCase = true) ->
+                    "Invalid API key — key was rejected by Google."
+                rawErrorBody.contains("PERMISSION_DENIED", ignoreCase = true) ->
+                    "Permission denied for this API key."
+                else ->
+                    "Invalid API key (HTTP $httpCode) — please check your key and try again."
+            }
+
+            Result.failure(Exception(userFriendlyMessage))
         } catch (e: Exception) {
-            Log.e(tag, "API Key validation exception: ${e.message}", e)
-            Result.failure(Exception("Invalid API key — please check and try again."))
+            Log.e(tag, "[API_KEY_VALIDATION] Exception during key validation: ${e.message}", e)
+            Result.failure(Exception("Validation error: ${e.localizedMessage ?: "Network or connection error"}"))
         }
     }
 

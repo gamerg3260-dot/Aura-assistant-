@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -118,6 +119,19 @@ fun HomeScreen(
     val isTheftAlarmTriggered by viewModel.isTheftAlarmTriggered.collectAsState()
     val theftAlarmReason by viewModel.theftAlarmReason.collectAsState()
     val lastScreenAnalysis by viewModel.lastScreenAnalysis.collectAsState()
+    val isPorcupineActive by viewModel.isPorcupineActive.collectAsState()
+    val selectedPorcupineKeyword by viewModel.selectedPorcupineKeyword.collectAsState()
+
+    val porcupineInfiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "porcupine_cue_home")
+    val porcupineBorderPulseAlpha by porcupineInfiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1.0f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            animation = androidx.compose.animation.core.tween(900, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
+        ),
+        label = "porcupine_pulse_alpha"
+    )
 
     val context = LocalContext.current
     var showPermissionSheet by remember { mutableStateOf(false) }
@@ -260,9 +274,54 @@ fun HomeScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    // Porcupine Listening Status Dot & Pulsating Border Indicator
+                    AnimatedVisibility(visible = isPorcupineActive) {
+                        Box(
+                            modifier = Modifier
+                                .padding(bottom = 12.dp)
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(AuraCyanPrimary.copy(alpha = 0.12f))
+                                .border(
+                                    width = 1.5.dp,
+                                    color = AuraCyanPrimary.copy(alpha = porcupineBorderPulseAlpha),
+                                    shape = RoundedCornerShape(20.dp)
+                                )
+                                .padding(horizontal = 14.dp, vertical = 6.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                // Pulsating Status Dot with radial glow ring
+                                Box(contentAlignment = Alignment.Center) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(14.dp)
+                                            .clip(CircleShape)
+                                            .background(AuraSuccess.copy(alpha = porcupineBorderPulseAlpha * 0.45f))
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(AuraSuccess)
+                                    )
+                                }
+                                Text(
+                                    text = "PORCUPINE LISTENING • \"${selectedPorcupineKeyword.ifBlank { "JARVIS" }.uppercase()}\"",
+                                    color = AuraCyanBright,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.6.sp
+                                )
+                            }
+                        }
+                    }
+
                     VoiceOrb(
                         state = listeningState,
                         audioRms = audioRms,
+                        isPorcupineActive = isPorcupineActive,
                         onClick = onMicAction
                     )
 
@@ -281,7 +340,8 @@ fun HomeScreen(
                     )
 
                     Text(
-                        text = "Wake word: \"${preferences.customWakeWord}\" • Tap orb to speak",
+                        text = if (isPorcupineActive) "Listening for wake word: \"${selectedPorcupineKeyword.ifBlank { "Jarvis" }}\" • Tap orb to speak"
+                               else "Wake word: \"${preferences.customWakeWord}\" • Tap orb to speak",
                         color = TextMuted,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 2.dp)

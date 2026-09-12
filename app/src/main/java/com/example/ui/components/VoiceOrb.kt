@@ -35,6 +35,7 @@ import kotlin.math.sin
 fun VoiceOrb(
     state: AssistantListeningState,
     audioRms: Float,
+    isPorcupineActive: Boolean = false,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
@@ -48,6 +49,26 @@ fun VoiceOrb(
             repeatMode = RepeatMode.Reverse
         ),
         label = "pulse_scale"
+    )
+
+    val porcupinePulseScale by infiniteTransition.animateFloat(
+        initialValue = 1.0f,
+        targetValue = 1.25f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1100, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "porcupine_pulse_scale"
+    )
+
+    val porcupinePulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.85f,
+        targetValue = 0.25f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1100, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "porcupine_pulse_alpha"
     )
 
     val rotationAngle by infiniteTransition.animateFloat(
@@ -92,6 +113,37 @@ fun VoiceOrb(
             val center = Offset(size.width / 2f, size.height / 2f)
             val baseRadius = (size.minDimension / 3.4f) * pulseScale
             val dynamicRadius = baseRadius + (audioRms * 35f)
+
+            // Porcupine Active Pulsating Outer Ring & Halo
+            if (isPorcupineActive) {
+                val porcupineRadius = dynamicRadius * 1.38f * porcupinePulseScale
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            AuraCyanPrimary.copy(alpha = porcupinePulseAlpha * 0.45f),
+                            AuraSuccess.copy(alpha = porcupinePulseAlpha * 0.15f),
+                            Color.Transparent
+                        ),
+                        center = center,
+                        radius = porcupineRadius * 1.15f
+                    ),
+                    radius = porcupineRadius * 1.15f,
+                    center = center
+                )
+                // Outer pulsating cyan/green border stroke
+                drawCircle(
+                    color = AuraCyanPrimary.copy(alpha = porcupinePulseAlpha),
+                    radius = porcupineRadius,
+                    center = center,
+                    style = Stroke(width = 3.dp.toPx())
+                )
+                drawCircle(
+                    color = AuraSuccess.copy(alpha = porcupinePulseAlpha * 0.7f),
+                    radius = porcupineRadius * 1.05f,
+                    center = center,
+                    style = Stroke(width = 1.5.dp.toPx())
+                )
+            }
 
             // Outer ethereal glow ring
             drawCircle(
@@ -153,6 +205,33 @@ fun VoiceOrb(
                 center = center,
                 style = Stroke(width = 2f)
             )
+
+            // Porcupine Active Status Dot Badge (top-right of orb)
+            if (isPorcupineActive) {
+                val badgeAngle = Math.toRadians(-45.0)
+                val badgeRadius = dynamicRadius * 1.25f
+                val dotX = center.x + (badgeRadius * cos(badgeAngle)).toFloat()
+                val dotY = center.y + (badgeRadius * sin(badgeAngle)).toFloat()
+
+                // Glowing background circle for status dot
+                drawCircle(
+                    color = AuraSuccess.copy(alpha = porcupinePulseAlpha * 0.5f),
+                    radius = 11.dp.toPx(),
+                    center = Offset(dotX, dotY)
+                )
+                // Solid green indicator dot
+                drawCircle(
+                    color = AuraSuccess,
+                    radius = 6.dp.toPx(),
+                    center = Offset(dotX, dotY)
+                )
+                // White highlight core
+                drawCircle(
+                    color = Color.White,
+                    radius = 2.5.dp.toPx(),
+                    center = Offset(dotX, dotY)
+                )
+            }
         }
     }
 }

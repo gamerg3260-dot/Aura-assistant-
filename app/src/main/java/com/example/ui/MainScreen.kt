@@ -1,6 +1,7 @@
 package com.example.ui
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -63,6 +64,7 @@ import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.VoiceEnrollmentScreen
 import com.example.ui.screens.VoiceLockTesterScreen
 import com.example.ui.theme.AuraCardBorder
+import com.example.ui.theme.AuraCyanBright
 import com.example.ui.theme.AuraCyanPrimary
 import com.example.ui.theme.AuraDarkBackground
 import com.example.ui.theme.AuraDarkSurface
@@ -135,6 +137,8 @@ fun MainScreen(
                 )
             }
             ScreenDestination.MainApp -> {
+                val isPorcupineActive by viewModel.isPorcupineActive.collectAsState()
+
                 Scaffold(
                     modifier = Modifier
                         .fillMaxSize()
@@ -145,6 +149,7 @@ fun MainScreen(
                             userName = prefs.userName,
                             isVoiceEnrolled = isVoiceEnrolled,
                             isBgServiceRunning = isBgServiceEnabled,
+                            isPorcupineActive = isPorcupineActive,
                             batteryPct = stats.batteryPercent,
                             isCharging = stats.isCharging,
                             onToggleService = {
@@ -196,10 +201,22 @@ private fun AuraTopAppBar(
     userName: String,
     isVoiceEnrolled: Boolean,
     isBgServiceRunning: Boolean,
+    isPorcupineActive: Boolean = false,
     batteryPct: Int,
     isCharging: Boolean,
     onToggleService: () -> Unit
 ) {
+    val topBarInfiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "topbar_porcupine")
+    val porcupineAlphaPulse by topBarInfiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1.0f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            animation = androidx.compose.animation.core.tween(800, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
+        ),
+        label = "porcupine_topbar_alpha"
+    )
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -257,6 +274,48 @@ private fun AuraTopAppBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // Porcupine Active Status Indicator Pill
+            androidx.compose.animation.AnimatedVisibility(visible = isPorcupineActive) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(AuraCyanPrimary.copy(alpha = 0.18f))
+                        .border(
+                            width = 1.2.dp,
+                            color = AuraCyanPrimary.copy(alpha = porcupineAlphaPulse),
+                            shape = RoundedCornerShape(20.dp)
+                        )
+                        .padding(horizontal = 8.dp, vertical = 5.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .clip(CircleShape)
+                                    .background(AuraSuccess.copy(alpha = porcupineAlphaPulse * 0.5f))
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(AuraSuccess)
+                            )
+                        }
+                        Text(
+                            text = "DSP LISTENING",
+                            color = AuraCyanBright,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp
+                        )
+                    }
+                }
+            }
+
             // Background Guard Badge / Button
             Box(
                 modifier = Modifier

@@ -8,10 +8,15 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.speech.tts.Voice
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 class AuraSpeechManager(
@@ -21,10 +26,14 @@ class AuraSpeechManager(
     private val onErrorCallback: ((Int) -> Unit)? = null
 ) {
     private val tag = "AuraSpeechManager"
+    private val scope = CoroutineScope(Dispatchers.Main + Job())
+    private val cloudTtsService = GoogleCloudTtsService(context)
 
     private var speechRecognizer: SpeechRecognizer? = null
     private var textToSpeech: TextToSpeech? = null
     private var isTtsInitialized = false
+    private var hasVeryHighQualityOnDeviceVoice = false
+    private var currentLanguageCode = "en"
     private var activeOnDoneCallback: (() -> Unit)? = null
 
     private var currentPitch: Float = 1.12f
@@ -90,10 +99,13 @@ class AuraSpeechManager(
 
     /**
      * Configures a warm, natural, fluent female voice persona ("Aura").
+     * Checks available voices via TextToSpeech.getVoices() for Voice.QUALITY_VERY_HIGH / Voice.QUALITY_HIGH.
      */
     fun configureNaturalFemaleVoice(pitch: Float = 1.12f, speed: Float = 1.0f) {
         currentPitch = pitch
         currentSpeed = speed
+        hasVeryHighQualityOnDeviceVoice = false
+
         textToSpeech?.let { tts ->
             tts.setPitch(currentPitch)
             tts.setSpeechRate(currentSpeed)
@@ -101,35 +113,46 @@ class AuraSpeechManager(
             try {
                 val availableVoices = tts.voices
                 if (!availableVoices.isNullOrEmpty()) {
-                    // Look for high-quality female / natural neural voices
-                    val femaleVoice = availableVoices.firstOrNull { voice ->
-                        val name = voice.name.lowercase()
-                        !voice.isNetworkConnectionRequired && (
-                            name.contains("female") ||
-                            name.contains("woman") ||
-                            name.contains("sfg") ||
-                            name.contains("en-us-x-sfg") ||
-                            name.contains("hi-in-x-hie") ||
-                            name.contains("neural2") ||
-                            name.contains("wavenet")
-                        )
+                    // Check for Voice.QUALITY_VERY_HIGH or Voice.QUALITY_HIGH female voice
+                    val highQualityVoice = availableVoices.firstOrNull { voice ->
+                        voice.quality >= Voice.QUALITY_VERY_HIGH && isFemaleVoiceName(voice.name)
                     } ?: availableVoices.firstOrNull { voice ->
-                        val name = voice.name.lowercase()
-                        name.contains("female") || name.contains("sfg") || name.contains("woman")
+                        voice.quality >= Voice.QUALITY_HIGH && isFemaleVoiceName(voice.name)
                     }
 
-                    if (femaleVoice != null) {
-                        tts.voice = femaleVoice
-                        Log.d(tag, "Natural female voice configured: ${femaleVoice.name}")
+                    if (highQualityVoice != null) {
+                        tts.voice = highQualityVoice
+                        hasVeryHighQualityOnDeviceVoice = true
+                        Log.i(tag, "Configured high-quality on-device female voice: ${highQualityVoice.name} (Quality: ${highQualityVoice.quality})")
+                    } else {
+                        val fallbackFemale = availableVoices.firstOrNull { isFemaleVoiceName(it.name) }
+                        if (fallbackFemale != null) {
+                            tts.voice = fallbackFemale
+                        }
+                        hasVeryHighQualityOnDeviceVoice = false
+                        Log.i(tag, "No Voice.QUALITY_VERY_HIGH/HIGH female voice found on-device. Will engage Google Cloud TTS if key present.")
                     }
                 }
             } catch (e: Exception) {
                 Log.w(tag, "Could not enumerate voices for female persona: ${e.message}")
+                hasVeryHighQualityOnDeviceVoice = false
             }
         }
     }
 
+    private fun isFemaleVoiceName(name: String): Boolean {
+        val lower = name.lowercase()
+        return lower.contains("female") ||
+                lower.contains("woman") ||
+                lower.contains("sfg") ||
+                lower.contains("en-us-x-sfg") ||
+                lower.contains("hi-in-x-hie") ||
+                lower.contains("neural2") ||
+                lower.contains("wavenet")
+    }
+
     fun applyLanguage(languageCode: String) {
+        currentLanguageCode = languageCode
         val targetLocale = when (languageCode.lowercase()) {
             "hi" -> Locale("hi", "IN")
             "hinglish" -> Locale("hi", "IN")
@@ -162,13 +185,51 @@ class AuraSpeechManager(
             return
         }
         stopListening()
+        stopSpeaking()
 
         activeOnDoneCallback = onDone
 
         if (!isTtsInitialized || textToSpeech == null) {
-            initTts("en")
+            initTts(currentLanguageCode)
         }
 
+        // If no high-quality on-device voice exists, synthesize via Google Cloud Text-to-Speech
+        if (!hasVeryHighQualityOnDeviceVoice) {
+            val apiKey = getEffectiveApiKey()
+            if (apiKey.isNotBlank()) {
+                scope.launch {
+                    val cloudSuccess = cloudTtsService.synthesizeAndPlay(
+                        text = text,
+                        languageCode = currentLanguageCode,
+                        apiKey = apiKey,
+                        onStart = {
+                            _isSpeaking.value = true
+                        },
+                        onComplete = {
+                            _isSpeaking.value = false
+                            onDone?.invoke()
+                        },
+                        onRmsUpdate = { rms ->
+                            _audioRms.value = rms
+                            onRmsChangedCallback(rms)
+                        }
+                    )
+                    if (cloudSuccess) {
+                        Log.i(tag, "AuraSpeechManager spoke via Google Cloud TTS (Neural2/WaveNet).")
+                        return@launch
+                    } else {
+                        Log.w(tag, "Cloud TTS failed in AuraSpeechManager, falling back to Android TTS.")
+                        speakViaAndroidTts(text, onDone)
+                    }
+                }
+                return
+            }
+        }
+
+        speakViaAndroidTts(text, onDone)
+    }
+
+    private fun speakViaAndroidTts(text: String, onDone: (() -> Unit)?) {
         _isSpeaking.value = true
         val params = Bundle().apply {
             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "AURA_UTTERANCE_${System.currentTimeMillis()}")
@@ -180,7 +241,21 @@ class AuraSpeechManager(
         }
     }
 
+    private fun getEffectiveApiKey(): String {
+        return try {
+            val keystoreManager = com.example.data.security.KeystoreManager(context)
+            val userKey = keystoreManager.retrieveAndDecrypt("user_llm_api_key")
+            if (!userKey.isNullOrBlank()) return userKey.trim()
+
+            val buildKey = com.example.BuildConfig.GEMINI_API_KEY
+            if (buildKey.isNotBlank() && !buildKey.contains("MY_GEMINI_API_KEY")) buildKey else ""
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
     fun stopSpeaking() {
+        cloudTtsService.stop()
         try {
             textToSpeech?.stop()
         } catch (e: Exception) {

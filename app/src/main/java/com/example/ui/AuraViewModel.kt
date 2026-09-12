@@ -679,6 +679,7 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
     val isServiceMuted = AuraVoiceService.isMuted
     val backgroundAudioRms = AuraVoiceService.backgroundAudioRms
     val isPorcupineActive = AuraVoiceService.isPorcupineActive
+    val isBatteryOptimizationExempt = AuraVoiceService.isBatteryOptimizationExempt
     val activeWakeWordEngine = AuraVoiceService.activeWakeWordEngine
 
     // Picovoice Porcupine State

@@ -1,18 +1,20 @@
 package com.example.data.api
 
+import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
 
 /**
  * Retrofit interface for Google Gemini Generative Language API.
- * Uses gemini-3.5-flash as mandated for modern basic and general text/tool tasks.
+ * Uses gemini-1.5-flash for modern general text and tool execution tasks.
  */
 interface GeminiApiService {
 
-    @POST("v1beta/models/gemini-3.5-flash:generateContent")
+    @POST("v1beta/models/gemini-1.5-flash:generateContent")
     suspend fun generateContent(
         @Query("key") apiKey: String,
         @Body request: GeminiGenerateContentRequest
@@ -24,4 +26,9 @@ interface GeminiApiService {
         @Query("key") apiKey: String,
         @Body request: GeminiGenerateContentRequest
     ): Response<GeminiGenerateContentResponse>
+
+    @GET("v1beta/models")
+    suspend fun listModels(
+        @Query("key") apiKey: String
+    ): Response<ResponseBody>
 }

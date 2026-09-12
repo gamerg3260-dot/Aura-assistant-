@@ -64,6 +64,7 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
         const val ACTION_STOP_SERVICE = "com.example.aura.ACTION_STOP_SERVICE"
         const val ACTION_TOGGLE_MUTE = "com.example.aura.ACTION_TOGGLE_MUTE"
         const val ACTION_LISTEN_NOW = "com.example.aura.ACTION_LISTEN_NOW"
+        const val ACTION_EXEMPT_BATTERY = "com.example.aura.ACTION_EXEMPT_BATTERY"
 
         private val _isServiceActive = MutableStateFlow(false)
         val isServiceActive = _isServiceActive.asStateFlow()
@@ -71,7 +72,7 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
         private val _isMuted = MutableStateFlow(false)
         val isMuted = _isMuted.asStateFlow()
 
-        private val _serviceStatusText = MutableStateFlow("Voice-Lock Guard Active • Standby for 'Hey Aura'")
+        private val _serviceStatusText = MutableStateFlow("Voice-Lock Guard Active • Standby for wake word")
         val serviceStatusText = _serviceStatusText.asStateFlow()
 
         private val _backgroundAudioRms = MutableStateFlow(0f)
@@ -79,6 +80,9 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
 
         private val _isPorcupineActive = MutableStateFlow(false)
         val isPorcupineActive = _isPorcupineActive.asStateFlow()
+
+        private val _isBatteryOptimizationExempt = MutableStateFlow(true)
+        val isBatteryOptimizationExempt = _isBatteryOptimizationExempt.asStateFlow()
 
         private val _activeWakeWordEngine = MutableStateFlow("On-Device Acoustic Engine")
         val activeWakeWordEngine = _activeWakeWordEngine.asStateFlow()
@@ -197,6 +201,7 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val isBatteryExempt = com.example.system.BatteryOptimizationHelper.isIgnoringBatteryOptimizations(this)
+        _isBatteryOptimizationExempt.value = isBatteryExempt
         Log.i(tag, "[BACKGROUND_MONITOR_DEBUG] Foreground Voice Service startId=$startId action=${intent?.action} | Battery Optimization Exempt: $isBatteryExempt | Audio Focus: $hasAudioFocus")
 
         when (intent?.action) {
@@ -204,6 +209,11 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
                 Log.d(tag, "Received ACTION_STOP_SERVICE")
                 handleStopService()
                 return START_NOT_STICKY
+            }
+            ACTION_EXEMPT_BATTERY -> {
+                Log.d(tag, "Received ACTION_EXEMPT_BATTERY")
+                com.example.system.BatteryOptimizationHelper.requestIgnoreBatteryOptimizations(this)
+                updateNotification()
             }
             ACTION_TOGGLE_MUTE -> {
                 _isMuted.value = !_isMuted.value
@@ -365,9 +375,12 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
     }
 
     private fun buildNotification(): Notification {
-        val userName = AuraApplication.instance.preferences.userName
+        val prefs = AuraApplication.instance.preferences
+        val userName = prefs.userName
         val isMutedState = _isMuted.value
-        val statusText = _serviceStatusText.value
+        val isPorcupine = _isPorcupineActive.value
+        val isBatteryExempt = com.example.system.BatteryOptimizationHelper.isIgnoringBatteryOptimizations(this)
+        _isBatteryOptimizationExempt.value = isBatteryExempt
 
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -401,21 +414,34 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        // Action 3: Stop
-        val stopIntent = Intent(this, AuraVoiceService::class.java).apply {
-            action = ACTION_STOP_SERVICE
+        // Action 3: Stop or Exempt Battery
+        val action3Intent = Intent(this, AuraVoiceService::class.java).apply {
+            action = if (!isBatteryExempt) ACTION_EXEMPT_BATTERY else ACTION_STOP_SERVICE
         }
-        val pendingStop = PendingIntent.getService(
+        val pendingAction3 = PendingIntent.getService(
             this,
             3,
-            stopIntent,
+            action3Intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Aura AI • $userName's Assistant")
-            .setContentText(statusText)
-            .setSubText(if (isMutedState) "Muted" else "Voice-Lock Guard Active")
+        val contentTitle = "Aura AI • $userName's Assistant"
+        val contentText = when {
+            isMutedState -> "Microphone Muted (Listening Paused)"
+            isPorcupine -> "Porcupine Active • Keyword '${prefs.selectedPorcupineKeyword.ifBlank { "JARVIS" }.uppercase()}'"
+            else -> _serviceStatusText.value
+        }
+
+        val subText = when {
+            !isBatteryExempt -> "⚠️ Battery Optimization Active (Tap to exempt)"
+            isPorcupine -> "Hardware DSP Wake-Word Guard Active"
+            else -> "Voice-Lock Guard Active"
+        }
+
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle(contentTitle)
+            .setContentText(contentText)
+            .setSubText(subText)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(pendingOpenApp)
             .setOngoing(true)
@@ -427,8 +453,14 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
                 if (isMutedState) "Resume" else "Mute",
                 pendingMute
             )
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", pendingStop)
-            .build()
+
+        if (!isBatteryExempt) {
+            builder.addAction(android.R.drawable.ic_dialog_alert, "Exempt Battery", pendingAction3)
+        } else {
+            builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", pendingAction3)
+        }
+
+        return builder.build()
     }
 
     private fun startForegroundWithMicrophone() {

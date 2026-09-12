@@ -22,8 +22,8 @@ import java.util.UUID
 
 /**
  * Manager class responsible for handling and speaking Gemini LLM responses using Android TextToSpeech
- * with an optimized natural-sounding female voice configuration, markdown/code cleaning,
- * and visualizer RMS pulsing.
+ * with an optimized natural-sounding female voice configuration (Voice.QUALITY_VERY_HIGH check),
+ * Google Cloud Text-to-Speech (Neural2/WaveNet) fallback, markdown/code cleaning, and visualizer RMS pulsing.
  */
 class GeminiSpokenOutputManager(
     private val context: Context,
@@ -31,9 +31,11 @@ class GeminiSpokenOutputManager(
 ) {
     private val tag = "GeminiSpokenOutput"
     private val scope = CoroutineScope(Dispatchers.Main + Job())
+    private val cloudTtsService = GoogleCloudTtsService(context)
 
     private var textToSpeech: TextToSpeech? = null
     private var isInitialized = false
+    private var hasVeryHighQualityOnDeviceVoice = false
     private var activeCompletionCallback: (() -> Unit)? = null
     private var activeStartCallback: (() -> Unit)? = null
     private var visualizerJob: Job? = null
@@ -140,39 +142,57 @@ class GeminiSpokenOutputManager(
     }
 
     /**
-     * Searches TTS voices for natural neural/female voices matching the target locale.
+     * Searches TTS voices for natural neural/female voices matching the target locale,
+     * checking for Voice.QUALITY_VERY_HIGH / Voice.QUALITY_HIGH quality levels on-device.
      */
     private fun findAndApplyBestFemaleVoice(targetLocale: Locale) {
         val tts = textToSpeech ?: return
+        hasVeryHighQualityOnDeviceVoice = false
         try {
             val voices = tts.voices
             if (!voices.isNullOrEmpty()) {
-                // Priority 1: High quality, non-network-dependent female/wavenet voice matching target locale
                 val matchingLocaleVoices = voices.filter {
-                    it.locale.language == targetLocale.language
+                    it.locale.language.equals(targetLocale.language, ignoreCase = true)
                 }
 
-                val candidateVoice = matchingLocaleVoices.firstOrNull { voice ->
-                    val name = voice.name.lowercase()
-                    !voice.isNetworkConnectionRequired && isFemaleVoiceIdentifier(name)
+                // Priority 1: Check for Voice.QUALITY_VERY_HIGH or Voice.QUALITY_HIGH female voice matching target locale
+                val highQualityLocaleVoice = matchingLocaleVoices.firstOrNull { voice ->
+                    voice.quality >= Voice.QUALITY_VERY_HIGH && isFemaleVoiceIdentifier(voice.name.lowercase())
                 } ?: matchingLocaleVoices.firstOrNull { voice ->
-                    isFemaleVoiceIdentifier(voice.name.lowercase())
+                    voice.quality >= Voice.QUALITY_HIGH && isFemaleVoiceIdentifier(voice.name.lowercase())
+                }
+
+                // Priority 2: Check for any locale Voice.QUALITY_VERY_HIGH or Voice.QUALITY_HIGH female voice
+                val highQualityAnyVoice = voices.firstOrNull { voice ->
+                    voice.quality >= Voice.QUALITY_VERY_HIGH && isFemaleVoiceIdentifier(voice.name.lowercase())
                 } ?: voices.firstOrNull { voice ->
-                    !voice.isNetworkConnectionRequired && isFemaleVoiceIdentifier(voice.name.lowercase())
-                } ?: matchingLocaleVoices.firstOrNull { voice ->
-                    !voice.isNetworkConnectionRequired && voice.quality >= Voice.QUALITY_NORMAL
+                    voice.quality >= Voice.QUALITY_HIGH && isFemaleVoiceIdentifier(voice.name.lowercase())
                 }
 
-                if (candidateVoice != null) {
-                    tts.voice = candidateVoice
-                    _activeVoiceName.value = candidateVoice.name
-                    Log.d(tag, "Selected female voice: ${candidateVoice.name} (Locale: ${candidateVoice.locale})")
+                val selectedVoice = highQualityLocaleVoice ?: highQualityAnyVoice
+
+                if (selectedVoice != null) {
+                    tts.voice = selectedVoice
+                    hasVeryHighQualityOnDeviceVoice = true
+                    _activeVoiceName.value = "${selectedVoice.name} (On-Device High Quality)"
+                    Log.i(tag, "[TTS_VOICE_CHECK] Selected high-quality on-device female voice '${selectedVoice.name}' (Quality: ${selectedVoice.quality})")
                 } else {
-                    _activeVoiceName.value = "Default Female Engine (${targetLocale.displayLanguage})"
+                    // Standard quality voice fallback selection
+                    val fallbackVoice = matchingLocaleVoices.firstOrNull { isFemaleVoiceIdentifier(it.name.lowercase()) }
+                        ?: voices.firstOrNull { isFemaleVoiceIdentifier(it.name.lowercase()) }
+                    if (fallbackVoice != null) {
+                        tts.voice = fallbackVoice
+                        _activeVoiceName.value = "${fallbackVoice.name} (Standard Quality)"
+                    } else {
+                        _activeVoiceName.value = "Default Female Engine (${targetLocale.displayLanguage})"
+                    }
+                    hasVeryHighQualityOnDeviceVoice = false
+                    Log.i(tag, "[TTS_VOICE_CHECK] No Voice.QUALITY_VERY_HIGH/HIGH female voice found on-device. Will use Google Cloud Text-to-Speech (Neural2/WaveNet).")
                 }
             }
         } catch (e: Exception) {
-            Log.w(tag, "Voice query not supported on this TTS engine: ${e.message}")
+            Log.w(tag, "Voice query error on Android TTS engine: ${e.message}")
+            hasVeryHighQualityOnDeviceVoice = false
         }
     }
 
@@ -235,6 +255,7 @@ class GeminiSpokenOutputManager(
 
     /**
      * Speaks the Gemini LLM response out loud after sanitizing markdown, code blocks, and symbols.
+     * Uses Google Cloud Text-to-Speech (Neural2/WaveNet) if no Voice.QUALITY_VERY_HIGH voice exists on-device.
      */
     fun speakGeminiResponse(
         rawLlmResponse: String,
@@ -257,6 +278,49 @@ class GeminiSpokenOutputManager(
             initializeTtsEngine(currentLanguageCode)
         }
 
+        // If no high-quality on-device voice exists, synthesize via Google Cloud Text-to-Speech (Neural2 / WaveNet)
+        if (!hasVeryHighQualityOnDeviceVoice) {
+            val apiKey = getEffectiveApiKey()
+            if (apiKey.isNotBlank()) {
+                scope.launch {
+                    Log.i(tag, "[TTS_PIPELINE] Synthesizing via Google Cloud Text-to-Speech (Neural2/WaveNet) for natural output.")
+                    val cloudSuccess = cloudTtsService.synthesizeAndPlay(
+                        text = sanitizedText,
+                        languageCode = currentLanguageCode,
+                        apiKey = apiKey,
+                        onStart = {
+                            _isSpeaking.value = true
+                            _activeVoiceName.value = "Google Cloud Neural2/WaveNet Female Voice"
+                            onStart?.invoke()
+                        },
+                        onComplete = {
+                            _isSpeaking.value = false
+                            onComplete?.invoke()
+                        },
+                        onRmsUpdate = { rms ->
+                            _speechRms.value = rms
+                        }
+                    )
+                    if (cloudSuccess) {
+                        Log.i(tag, "[TTS_PIPELINE] Cloud TTS playback completed successfully.")
+                        return@launch
+                    } else {
+                        Log.w(tag, "[TTS_PIPELINE] Cloud TTS unavailable/failed. Falling back to on-device Android TTS engine.")
+                        speakViaAndroidTts(sanitizedText, onStart, onComplete)
+                    }
+                }
+                return
+            }
+        }
+
+        speakViaAndroidTts(sanitizedText, onStart, onComplete)
+    }
+
+    private fun speakViaAndroidTts(
+        text: String,
+        onStart: (() -> Unit)?,
+        onComplete: (() -> Unit)?
+    ) {
         val utteranceId = "GEMINI_SPEECH_${UUID.randomUUID()}"
         val params = Bundle().apply {
             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
@@ -264,17 +328,30 @@ class GeminiSpokenOutputManager(
 
         _isSpeaking.value = true
         val result = textToSpeech?.speak(
-            sanitizedText,
+            text,
             TextToSpeech.QUEUE_FLUSH,
             params,
             utteranceId
         )
 
         if (result != TextToSpeech.SUCCESS) {
-            Log.e(tag, "speak() failed with result: $result")
+            Log.e(tag, "speakViaAndroidTts() failed with result: $result")
             _isSpeaking.value = false
             stopVisualizerPulse()
             onComplete?.invoke()
+        }
+    }
+
+    private fun getEffectiveApiKey(): String {
+        return try {
+            val keystoreManager = com.example.data.security.KeystoreManager(context)
+            val userKey = keystoreManager.retrieveAndDecrypt("user_llm_api_key")
+            if (!userKey.isNullOrBlank()) return userKey.trim()
+
+            val buildKey = com.example.BuildConfig.GEMINI_API_KEY
+            if (buildKey.isNotBlank() && !buildKey.contains("MY_GEMINI_API_KEY")) buildKey else ""
+        } catch (e: Exception) {
+            ""
         }
     }
 
@@ -357,6 +434,7 @@ class GeminiSpokenOutputManager(
      * Stops current speech output immediately.
      */
     fun stop() {
+        cloudTtsService.stop()
         try {
             textToSpeech?.stop()
         } catch (e: Exception) {
