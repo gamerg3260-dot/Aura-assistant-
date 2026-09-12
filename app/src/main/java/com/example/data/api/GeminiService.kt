@@ -24,7 +24,7 @@ data class LlmAssistantReply(
 )
 
 /**
- * Service layer coordinating Retrofit network calls to Google Gemini API (gemini-3.5-flash)
+ * Service layer coordinating Retrofit network calls to Google Gemini API (gemini-3.6-flash)
  * with device telemetry, accessibility context, tool declarations, response parsing,
  * and device tool execution via ToolExecutionModule.
  */
@@ -74,7 +74,7 @@ class GeminiService(
                 )
             )
 
-            // Primary attempt: gemini-1.5-flash:generateContent
+            // Primary attempt: gemini-3.6-flash:generateContent
             val response = apiService.generateContent(apiKey = cleanKey, request = pingRequest)
             val httpCode = response.code()
             val rawErrorBody = response.errorBody()?.string() ?: ""
@@ -82,7 +82,7 @@ class GeminiService(
 
             Log.i(
                 tag,
-                "[API_KEY_VALIDATION] Primary endpoint 'v1beta/models/gemini-1.5-flash:generateContent' returned HTTP $httpCode | Successful=${response.isSuccessful} | ResponseBody=$responseBody | ErrorBody=$rawErrorBody"
+                "[API_KEY_VALIDATION] Primary endpoint 'v1beta/models/gemini-3.6-flash:generateContent' returned HTTP $httpCode | Successful=${response.isSuccessful} | ResponseBody=$responseBody | ErrorBody=$rawErrorBody"
             )
 
             // Case 1: HTTP 200 OK
@@ -92,7 +92,7 @@ class GeminiService(
                     Log.w(tag, "[API_KEY_VALIDATION] HTTP 200 returned API error: ${apiError.message}")
                     return@withContext Result.failure(Exception("API Key Invalid: ${apiError.message}"))
                 }
-                Log.i(tag, "[API_KEY_VALIDATION] SUCCESS: Key validated via gemini-1.5-flash endpoint.")
+                Log.i(tag, "[API_KEY_VALIDATION] SUCCESS: Key validated via gemini-3.6-flash endpoint.")
                 return@withContext Result.success("API key verified and stored securely.")
             }
 

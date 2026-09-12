@@ -930,7 +930,7 @@ fun HomeScreen(
                                             .padding(horizontal = 6.dp, vertical = 2.dp)
                                     ) {
                                         Text(
-                                            text = if (executionSource?.startsWith("gemini") == true) "GEMINI 3.5 FLASH" else "ON-DEVICE",
+                                            text = if (executionSource?.startsWith("gemini") == true) "GEMINI 3.6 FLASH" else "ON-DEVICE",
                                             color = if (executionSource?.startsWith("gemini") == true) AuraCyanPrimary else AuraPinkTertiary,
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.Bold

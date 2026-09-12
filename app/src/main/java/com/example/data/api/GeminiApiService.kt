@@ -10,11 +10,11 @@ import retrofit2.http.Query
 
 /**
  * Retrofit interface for Google Gemini Generative Language API.
- * Uses gemini-1.5-flash for modern general text and tool execution tasks.
+ * Uses gemini-3.6-flash for modern general text and tool execution tasks.
  */
 interface GeminiApiService {
 
-    @POST("v1beta/models/gemini-1.5-flash:generateContent")
+    @POST("v1beta/models/gemini-3.6-flash:generateContent")
     suspend fun generateContent(
         @Query("key") apiKey: String,
         @Body request: GeminiGenerateContentRequest
