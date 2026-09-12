@@ -1,0 +1,1286 @@
+package com.example.ui.screens
+
+import android.content.Intent
+import android.provider.Settings
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Accessibility
+import androidx.compose.material.icons.filled.Assistant
+import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContactPage
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Launch
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Power
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.VpnKey
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.AuraApplication
+import com.example.service.AuraVoiceService
+import com.example.ui.AuraViewModel
+import com.example.ui.components.AuraGlassCard
+import com.example.ui.theme.AuraCardBorder
+import com.example.ui.theme.AuraCyanBright
+import com.example.ui.theme.AuraCyanPrimary
+import com.example.ui.theme.AuraDarkSurface
+import com.example.ui.theme.AuraError
+import com.example.ui.theme.AuraPinkTertiary
+import com.example.ui.theme.AuraSuccess
+import com.example.ui.theme.AuraVioletSecondary
+import com.example.ui.theme.TextMuted
+import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.TextPrimary
+import com.example.ui.theme.TextSecondary
+
+@Composable
+fun SettingsScreen(
+    viewModel: AuraViewModel,
+    onNavigateToEnrollment: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val app = AuraApplication.instance
+    val prefs = app.preferences
+    val isEnrolled by viewModel.isVoiceEnrolled.collectAsState()
+    val sensitivity by viewModel.voiceSensitivity.collectAsState()
+    val isBgServiceEnabled by viewModel.isBackgroundServiceEnabled.collectAsState()
+    val usePorcupine by viewModel.usePorcupineWakeWord.collectAsState()
+    val picovoiceKey by viewModel.picovoiceAccessKey.collectAsState()
+    val porcupineKeyword by viewModel.selectedPorcupineKeyword.collectAsState()
+    val porcupineSensitivity by viewModel.porcupineSensitivity.collectAsState()
+    val isPorcupineActive by viewModel.isPorcupineActive.collectAsState()
+    val activeWakeWordEngine by viewModel.activeWakeWordEngine.collectAsState()
+
+    // Expansion states for category cards
+    val expandedCategories = remember {
+        mutableStateMapOf(
+            1 to true,
+            2 to false,
+            3 to false,
+            4 to false,
+            5 to false,
+            6 to false,
+            7 to false,
+            8 to false,
+            9 to false,
+            10 to false
+        )
+    }
+
+    // Local toggle mirror states for real-time reactivity
+    var sysVol by remember { mutableStateOf(prefs.toggleSystemControlVolume) }
+    var sysBright by remember { mutableStateOf(prefs.toggleSystemControlBrightness) }
+    var sysWifi by remember { mutableStateOf(prefs.toggleSystemControlWifiBt) }
+    var sysApps by remember { mutableStateOf(prefs.toggleSystemControlAppLauncher) }
+
+    var commPhone by remember { mutableStateOf(prefs.toggleCommPhoneCalls) }
+    var commSms by remember { mutableStateOf(prefs.toggleCommSms) }
+    var commWa by remember { mutableStateOf(prefs.toggleCommWhatsapp) }
+
+    var infoWeather by remember { mutableStateOf(prefs.toggleInfoWeather) }
+    var infoDevice by remember { mutableStateOf(prefs.toggleInfoDeviceStatus) }
+    var infoLoc by remember { mutableStateOf(prefs.toggleInfoLocation) }
+
+    var mediaSpotify by remember { mutableStateOf(prefs.toggleMediaSpotify) }
+    var mediaYt by remember { mutableStateOf(prefs.toggleMediaYoutube) }
+
+    var prodRemind by remember { mutableStateOf(prefs.toggleProdReminders) }
+    var prodTimers by remember { mutableStateOf(prefs.toggleProdTimers) }
+    var prodMemory by remember { mutableStateOf(prefs.toggleProdMemory) }
+
+    var visCam by remember { mutableStateOf(prefs.toggleVisionCamera) }
+    var visScreen by remember { mutableStateOf(prefs.toggleVisionScreenReading) }
+    var visObj by remember { mutableStateOf(prefs.toggleVisionObjectRecognition) }
+
+    var webSearch by remember { mutableStateOf(prefs.toggleWebGoogleSearch) }
+
+    var secTheft by remember { mutableStateOf(prefs.toggleSecurityAntiTheft) }
+    var secIntruder by remember { mutableStateOf(prefs.toggleSecurityIntruderAlert) }
+
+    var callAnnounce by remember { mutableStateOf(prefs.toggleCallsAnnouncer) }
+    var callVoiceAnswer by remember { mutableStateOf(prefs.toggleCallsVoiceAnswer) }
+
+    var contactsPrio by remember { mutableStateOf(prefs.toggleContactsPriority) }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Default.Settings, contentDescription = null, tint = AuraCyanPrimary, modifier = Modifier.size(24.dp))
+                Text(
+                    text = "Assistant Preferences",
+                    color = TextPrimary,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                text = "Configure modular tool execution, background service persistence, and on-device voice biometric lock.",
+                color = TextSecondary,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+
+        // Section: Voice Biometrics
+        item {
+            Text(
+                text = "VOICE BIOMETRICS & LOCK",
+                color = TextMuted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.2.sp
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            AuraGlassCard(modifier = Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Voice-Lock Status", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(
+                                text = if (isEnrolled) "Calibrated to ${prefs.userName}'s voice" else "No voiceprint enrolled",
+                                color = if (isEnrolled) AuraSuccess else AuraError,
+                                fontSize = 12.sp
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isEnrolled) AuraSuccess.copy(alpha = 0.15f) else AuraError.copy(alpha = 0.15f))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = if (isEnrolled) "ENROLLED" else "UNENROLLED",
+                                color = if (isEnrolled) AuraSuccess else AuraError,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    // Sensitivity slider
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Similarity Threshold", color = TextSecondary, fontSize = 12.sp)
+                            Text("${(sensitivity * 100).toInt()}%", color = AuraCyanPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                        Slider(
+                            value = sensitivity,
+                            onValueChange = { viewModel.setVoiceSensitivity(it) },
+                            valueRange = 0.60f..0.92f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = AuraCyanPrimary,
+                                activeTrackColor = AuraCyanPrimary,
+                                inactiveTrackColor = AuraCardBorder
+                            )
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = onNavigateToEnrollment,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AuraCyanPrimary,
+                                contentColor = Color(0xFF070B13)
+                            )
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Re-Enroll", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        OutlinedButton(
+                            onClick = { viewModel.resetEnrollment() },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = null, tint = AuraError, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Clear Voice", color = AuraError, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Section: Picovoice Porcupine Wake Word Engine
+        item {
+            var keyText by remember(picovoiceKey) { mutableStateOf(picovoiceKey) }
+            var isKeyVisible by remember { mutableStateOf(false) }
+
+            Text(
+                text = "WAKE WORD ENGINE & HARDWARE ACCELERATION",
+                color = TextMuted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            AuraGlassCard(modifier = Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    // Title row with switch
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isPorcupineActive) AuraSuccess.copy(alpha = 0.15f) else AuraCyanPrimary.copy(alpha = 0.15f))
+                                    .border(1.dp, if (isPorcupineActive) AuraSuccess.copy(alpha = 0.5f) else AuraCyanPrimary.copy(alpha = 0.4f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Bolt,
+                                    contentDescription = null,
+                                    tint = if (isPorcupineActive) AuraSuccess else AuraCyanPrimary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Column {
+                                Text(
+                                    text = "Picovoice Porcupine SDK",
+                                    color = TextPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                                Text(
+                                    text = if (isPorcupineActive) "Hardware DSP Active • Zero CPU Idle" else "Micro-power on-device keyword spotter",
+                                    color = if (isPorcupineActive) AuraSuccess else TextSecondary,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+
+                        Switch(
+                            checked = usePorcupine,
+                            onCheckedChange = { viewModel.setUsePorcupineWakeWord(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF070B13),
+                                checkedTrackColor = AuraCyanPrimary,
+                                uncheckedThumbColor = TextMuted,
+                                uncheckedTrackColor = AuraDarkSurface
+                            )
+                        )
+                    }
+
+                    // Engine Status Banner
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                if (isPorcupineActive) AuraSuccess.copy(alpha = 0.12f)
+                                else AuraDarkSurface
+                            )
+                            .border(
+                                1.dp,
+                                if (isPorcupineActive) AuraSuccess.copy(alpha = 0.35f)
+                                else AuraCardBorder,
+                                RoundedCornerShape(10.dp)
+                            )
+                            .padding(12.dp)
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isPorcupineActive) AuraSuccess else AuraPinkTertiary)
+                                )
+                                Text(
+                                    text = "Engine: $activeWakeWordEngine",
+                                    color = if (isPorcupineActive) AuraSuccess else TextPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+                            Text(
+                                text = if (isPorcupineActive) {
+                                    "Actively spotting '$porcupineKeyword' with micro-power audio framing."
+                                } else if (picovoiceKey.isBlank()) {
+                                    "No AccessKey configured. Operating on Aura's native on-device acoustic RMS engine."
+                                } else {
+                                    "Porcupine standby or native fallback active."
+                                },
+                                color = TextMuted,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    if (usePorcupine) {
+                        // Keyword Selection Chips
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "Built-in Keyword Spotter",
+                                color = TextSecondary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                val popularKeywords = listOf("JARVIS", "PORCUPINE", "COMPUTER", "BUMBLEBEE")
+                                popularKeywords.forEach { kw ->
+                                    val isSelected = porcupineKeyword.equals(kw, ignoreCase = true)
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(
+                                                if (isSelected) AuraCyanPrimary.copy(alpha = 0.2f) else AuraDarkSurface
+                                            )
+                                            .border(
+                                                1.dp,
+                                                if (isSelected) AuraCyanPrimary else AuraCardBorder,
+                                                RoundedCornerShape(8.dp)
+                                            )
+                                            .clickable {
+                                                viewModel.setSelectedPorcupineKeyword(kw)
+                                            }
+                                            .padding(vertical = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = kw,
+                                            color = if (isSelected) AuraCyanPrimary else TextSecondary,
+                                            fontSize = 10.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Sensitivity Slider
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Detection Sensitivity", color = TextSecondary, fontSize = 12.sp)
+                                Text("${(porcupineSensitivity * 100).toInt()}%", color = AuraCyanPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                            Slider(
+                                value = porcupineSensitivity,
+                                onValueChange = { viewModel.setPorcupineSensitivity(it) },
+                                valueRange = 0.1f..1.0f,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = AuraCyanPrimary,
+                                    activeTrackColor = AuraCyanPrimary,
+                                    inactiveTrackColor = AuraCardBorder
+                                )
+                            )
+                        }
+
+                        // Picovoice AccessKey Input
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Picovoice AccessKey",
+                                    color = TextSecondary,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = if (picovoiceKey.isNotBlank()) "Configured" else "Optional (Free)",
+                                    color = if (picovoiceKey.isNotBlank()) AuraSuccess else TextMuted,
+                                    fontSize = 11.sp
+                                )
+                            }
+
+                            OutlinedTextField(
+                                value = keyText,
+                                onValueChange = {
+                                    keyText = it
+                                    viewModel.setPicovoiceAccessKey(it.trim())
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                placeholder = {
+                                    Text("Paste Picovoice AccessKey from console.picovoice.ai", color = TextMuted, fontSize = 11.sp)
+                                },
+                                visualTransformation = if (isKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                trailingIcon = {
+                                    IconButton(onClick = { isKeyVisible = !isKeyVisible }) {
+                                        Icon(
+                                            imageVector = if (isKeyVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                            contentDescription = "Toggle Key Visibility",
+                                            tint = TextMuted,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                },
+                                singleLine = true,
+                                shape = RoundedCornerShape(10.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = AuraCyanPrimary,
+                                    unfocusedBorderColor = AuraCardBorder,
+                                    focusedTextColor = TextPrimary,
+                                    unfocusedTextColor = TextPrimary,
+                                    focusedContainerColor = AuraDarkSurface,
+                                    unfocusedContainerColor = AuraDarkSurface
+                                )
+                            )
+
+                            Text(
+                                text = "Obtain a free AccessKey at console.picovoice.ai. When blank or invalid, Aura automatically runs its zero-configuration on-device acoustic engine.",
+                                color = TextMuted,
+                                fontSize = 10.sp,
+                                lineHeight = 14.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Section: Default Digital Assistant App Configuration (Matches Android System Settings)
+        item {
+            val context = LocalContext.current
+            val isDefaultAssistant = remember {
+                com.example.service.voiceinteraction.AuraVoiceInteractionService.isSelectedAsDefaultAssistant(context)
+            }
+
+            Text(
+                text = "DEFAULT DIGITAL ASSISTANT INTEGRATION",
+                color = TextMuted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.2.sp
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            AuraGlassCard(modifier = Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isDefaultAssistant) AuraSuccess.copy(alpha = 0.15f) else AuraCyanPrimary.copy(alpha = 0.15f))
+                                    .border(1.dp, if (isDefaultAssistant) AuraSuccess.copy(alpha = 0.5f) else AuraCyanPrimary.copy(alpha = 0.5f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (isDefaultAssistant) Icons.Default.CheckCircle else Icons.Default.Assistant,
+                                    contentDescription = null,
+                                    tint = if (isDefaultAssistant) AuraSuccess else AuraCyanPrimary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(
+                                        text = "Default Assistant App",
+                                        color = TextPrimary,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(if (isDefaultAssistant) AuraSuccess.copy(alpha = 0.2f) else AuraCyanPrimary.copy(alpha = 0.2f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = if (isDefaultAssistant) "DEFAULT SET" else "SELECT IN SETTINGS",
+                                            color = if (isDefaultAssistant) AuraSuccess else AuraCyanBright,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = "Appear alongside Google, ChatGPT, and Claude in Android's 'Default digital assistant app' menu.",
+                                    color = TextMuted,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Text(
+                        text = "Setting Aura as your default assistant allows instant wake-up via home button long-press, power button hold, swipe gesture, or wake words ('Hey Aura' / 'Hey Google') just like Google Assistant.",
+                        color = TextSecondary,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp
+                    )
+
+                    Button(
+                        onClick = {
+                            val intent = Intent(Settings.ACTION_VOICE_INPUT_SETTINGS).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            try {
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                val fallbackIntent = Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                try {
+                                    context.startActivity(fallbackIntent)
+                                } catch (e2: Exception) {
+                                    context.startActivity(Intent(Settings.ACTION_SETTINGS).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    })
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isDefaultAssistant) AuraDarkSurface else AuraCyanPrimary,
+                            contentColor = if (isDefaultAssistant) AuraCyanBright else Color.Black
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Launch,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = if (isDefaultAssistant) "Open Default Assistant Settings" else "Set as Default Assistant App",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Section: Foreground Service & Battery Optimization
+        item {
+            val context = LocalContext.current
+            val isMuted by viewModel.isServiceMuted.collectAsState()
+            val isIgnoringBattery = remember(isBgServiceEnabled) {
+                AuraVoiceService.isIgnoringBatteryOptimizations(context)
+            }
+
+            Text(
+                text = "FOREGROUND SERVICE ARCHITECTURE & PERSISTENCE",
+                color = TextMuted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.2.sp
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            AuraGlassCard(modifier = Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // Main Service Toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("Aura Voice Service", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(if (isBgServiceEnabled) AuraSuccess.copy(alpha = 0.2f) else AuraError.copy(alpha = 0.2f))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = if (isBgServiceEnabled) "RUNNING" else "STOPPED",
+                                        color = if (isBgServiceEnabled) AuraSuccess else AuraError,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "Foreground Service with FOREGROUND_SERVICE_TYPE_MICROPHONE and START_STICKY lifecycle recovery.",
+                                color = TextMuted,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
+                        Switch(
+                            checked = isBgServiceEnabled,
+                            onCheckedChange = { viewModel.toggleBackgroundService(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = AuraCyanPrimary,
+                                checkedTrackColor = AuraCyanPrimary.copy(alpha = 0.3f),
+                                uncheckedThumbColor = TextMuted,
+                                uncheckedTrackColor = AuraDarkSurface
+                            )
+                        )
+                    }
+
+                    // Notification & Controls
+                    if (isBgServiceEnabled) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(AuraDarkSurface.copy(alpha = 0.8f))
+                                .border(1.dp, AuraCardBorder, RoundedCornerShape(10.dp))
+                                .padding(12.dp)
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.NotificationsActive,
+                                        contentDescription = null,
+                                        tint = AuraCyanPrimary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "Active Persistent Notification Tray",
+                                        color = TextPrimary,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                                Text(
+                                    text = "The persistent notification runs on low importance (silent) with ongoing lock-screen actions: [Listen] [${if (isMuted) "Resume" else "Mute"}] [Stop].",
+                                    color = TextSecondary,
+                                    fontSize = 11.sp,
+                                    lineHeight = 16.sp
+                                )
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { viewModel.toggleServiceMute() },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.outlinedButtonColors(
+                                            contentColor = if (isMuted) AuraCyanPrimary else TextSecondary
+                                        )
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(if (isMuted) "Unmute Guard" else "Mute Guard", fontSize = 11.sp)
+                                    }
+
+                                    Button(
+                                        onClick = { viewModel.triggerListenFromService() },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = AuraCyanPrimary,
+                                            contentColor = Color(0xFF070B13)
+                                        )
+                                    ) {
+                                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Test Trigger", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Battery Optimization & Doze Mode Exemption
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(AuraDarkSurface)
+                            .padding(12.dp)
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.BatteryChargingFull,
+                                        contentDescription = null,
+                                        tint = if (isIgnoringBattery) AuraSuccess else AuraPinkTertiary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = "Battery Optimization (Doze Mode)",
+                                        color = TextPrimary,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 12.sp
+                                    )
+                                }
+
+                                Text(
+                                    text = if (isIgnoringBattery) "Unrestricted" else "Optimized",
+                                    color = if (isIgnoringBattery) AuraSuccess else AuraPinkTertiary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            Text(
+                                text = if (isIgnoringBattery) {
+                                    "✓ Aura is exempt from battery optimization. The background service will run uninterrupted without being halted by Android Doze."
+                                } else {
+                                    "Android may throttle wake-word listening when the screen is turned off. Set battery to 'Unrestricted' for continuous operation."
+                                },
+                                color = TextSecondary,
+                                fontSize = 11.sp,
+                                lineHeight = 16.sp
+                            )
+
+                            if (!isIgnoringBattery) {
+                                Button(
+                                    onClick = {
+                                        com.example.system.BatteryOptimizationHelper.requestIgnoreBatteryOptimizations(context)
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = AuraVioletSecondary,
+                                        contentColor = Color.White
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Grant Unrestricted Battery Permission", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    // Auto-boot & task persistence info
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Power, contentDescription = null, tint = TextMuted, modifier = Modifier.size(14.dp))
+                        Text(
+                            text = "Auto-starts on system boot (RECEIVE_BOOT_COMPLETED) and schedules instant recovery if app is swiped from recents.",
+                            color = TextMuted,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        // Section: 10 Feature Categories with Master & Sub-toggles
+        item {
+            Text(
+                text = "MODULAR CAPABILITY TOGGLES (10 CATEGORIES)",
+                color = TextMuted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.2.sp
+            )
+        }
+
+        // 1. System Control
+        item {
+            CategoryToggleCard(
+                categoryIndex = 1,
+                title = "1. System Control",
+                subtitle = "Volume, brightness, Wi-Fi, app launching, flashlight",
+                icon = Icons.Default.PowerSettingsNew,
+                isExpanded = expandedCategories[1] == true,
+                onToggleExpand = { expandedCategories[1] = !(expandedCategories[1] ?: false) }
+            ) {
+                SubToggleRow("Media Volume Adjustment", sysVol) {
+                    sysVol = it
+                    prefs.toggleSystemControlVolume = it
+                }
+                SubToggleRow("Display Brightness", sysBright) {
+                    sysBright = it
+                    prefs.toggleSystemControlBrightness = it
+                }
+                SubToggleRow("Wi-Fi & Bluetooth Settings", sysWifi) {
+                    sysWifi = it
+                    prefs.toggleSystemControlWifiBt = it
+                }
+                SubToggleRow("App Launcher (YouTube, Spotify...)", sysApps) {
+                    sysApps = it
+                    prefs.toggleSystemControlAppLauncher = it
+                }
+            }
+        }
+
+        // 2. Communication
+        item {
+            CategoryToggleCard(
+                categoryIndex = 2,
+                title = "2. Communication",
+                subtitle = "Direct phone calls, SMS messages, WhatsApp automation",
+                icon = Icons.Default.Call,
+                isExpanded = expandedCategories[2] == true,
+                onToggleExpand = { expandedCategories[2] = !(expandedCategories[2] ?: false) }
+            ) {
+                SubToggleRow("Direct Phone Calls", commPhone) {
+                    commPhone = it
+                    prefs.toggleCommPhoneCalls = it
+                }
+                SubToggleRow("SMS Dispatch", commSms) {
+                    commSms = it
+                    prefs.toggleCommSms = it
+                }
+                SubToggleRow("WhatsApp Integration", commWa) {
+                    commWa = it
+                    prefs.toggleCommWhatsapp = it
+                }
+            }
+        }
+
+        // 3. Info & Telemetry
+        item {
+            CategoryToggleCard(
+                categoryIndex = 3,
+                title = "3. Information & Stats",
+                subtitle = "Live weather, device diagnostics, location lookups",
+                icon = Icons.Default.Info,
+                isExpanded = expandedCategories[3] == true,
+                onToggleExpand = { expandedCategories[3] = !(expandedCategories[3] ?: false) }
+            ) {
+                SubToggleRow("Weather Intelligence", infoWeather) {
+                    infoWeather = it
+                    prefs.toggleInfoWeather = it
+                }
+                SubToggleRow("Hardware Health & Battery Telemetry", infoDevice) {
+                    infoDevice = it
+                    prefs.toggleInfoDeviceStatus = it
+                }
+                SubToggleRow("Reverse-Geocoded Location", infoLoc) {
+                    infoLoc = it
+                    prefs.toggleInfoLocation = it
+                }
+            }
+        }
+
+        // 4. Media
+        item {
+            CategoryToggleCard(
+                categoryIndex = 4,
+                title = "4. Media Playback",
+                subtitle = "Spotify playback, YouTube content searches",
+                icon = Icons.Default.MusicNote,
+                isExpanded = expandedCategories[4] == true,
+                onToggleExpand = { expandedCategories[4] = !(expandedCategories[4] ?: false) }
+            ) {
+                SubToggleRow("Spotify Deep-Link Playback", mediaSpotify) {
+                    mediaSpotify = it
+                    prefs.toggleMediaSpotify = it
+                }
+                SubToggleRow("YouTube Search & Launch", mediaYt) {
+                    mediaYt = it
+                    prefs.toggleMediaYoutube = it
+                }
+            }
+        }
+
+        // 5. Productivity
+        item {
+            CategoryToggleCard(
+                categoryIndex = 5,
+                title = "5. Productivity & Memory",
+                subtitle = "Reminders, countdown timers, assistant memory facts",
+                icon = Icons.Default.Timer,
+                isExpanded = expandedCategories[5] == true,
+                onToggleExpand = { expandedCategories[5] = !(expandedCategories[5] ?: false) }
+            ) {
+                SubToggleRow("Calendar & Reminders", prodRemind) {
+                    prodRemind = it
+                    prefs.toggleProdReminders = it
+                }
+                SubToggleRow("System Alarms & Timers", prodTimers) {
+                    prodTimers = it
+                    prefs.toggleProdTimers = it
+                }
+                SubToggleRow("Persistent Assistant Memory (Room DB)", prodMemory) {
+                    prodMemory = it
+                    prefs.toggleProdMemory = it
+                }
+            }
+        }
+
+        // 6. Vision & Accessibility
+        item {
+            CategoryToggleCard(
+                categoryIndex = 6,
+                title = "6. Vision & Screen Reading",
+                subtitle = "Camera capture, AccessibilityService active screen reader",
+                icon = Icons.Default.Visibility,
+                isExpanded = expandedCategories[6] == true,
+                onToggleExpand = { expandedCategories[6] = !(expandedCategories[6] ?: false) }
+            ) {
+                SubToggleRow("Camera Triggering", visCam) {
+                    visCam = it
+                    prefs.toggleVisionCamera = it
+                }
+                SubToggleRow("Accessibility Screen Reading", visScreen) {
+                    visScreen = it
+                    prefs.toggleVisionScreenReading = it
+                }
+                SubToggleRow("Object & Scene Description", visObj) {
+                    visObj = it
+                    prefs.toggleVisionObjectRecognition = it
+                }
+            }
+        }
+
+        // 7. Web
+        item {
+            CategoryToggleCard(
+                categoryIndex = 7,
+                title = "7. Web Queries",
+                subtitle = "Google Search queries and knowledge synthesis",
+                icon = Icons.Default.Search,
+                isExpanded = expandedCategories[7] == true,
+                onToggleExpand = { expandedCategories[7] = !(expandedCategories[7] ?: false) }
+            ) {
+                SubToggleRow("Google Search Dispatch", webSearch) {
+                    webSearch = it
+                    prefs.toggleWebGoogleSearch = it
+                }
+            }
+        }
+
+        // 8. Security
+        item {
+            CategoryToggleCard(
+                categoryIndex = 8,
+                title = "8. Security & Intruder Guard",
+                subtitle = "Anti-theft motion alarms, intruder voice-mismatch alerts",
+                icon = Icons.Default.Security,
+                isExpanded = expandedCategories[8] == true,
+                onToggleExpand = { expandedCategories[8] = !(expandedCategories[8] ?: false) }
+            ) {
+                SubToggleRow("Anti-Theft Unplug Siren", secTheft) {
+                    secTheft = it
+                    prefs.toggleSecurityAntiTheft = it
+                }
+                SubToggleRow("Intruder Voice-Mismatch Alert Logging", secIntruder) {
+                    secIntruder = it
+                    prefs.toggleSecurityIntruderAlert = it
+                }
+            }
+        }
+
+        // 9. Calls
+        item {
+            CategoryToggleCard(
+                categoryIndex = 9,
+                title = "9. Incoming Calls",
+                subtitle = "Caller announcer, voice-controlled accept/reject",
+                icon = Icons.Default.Call,
+                isExpanded = expandedCategories[9] == true,
+                onToggleExpand = { expandedCategories[9] = !(expandedCategories[9] ?: false) }
+            ) {
+                SubToggleRow("Incoming Caller Announcer", callAnnounce) {
+                    callAnnounce = it
+                    prefs.toggleCallsAnnouncer = it
+                }
+                SubToggleRow("Voice-Controlled Answer / Reject", callVoiceAnswer) {
+                    callVoiceAnswer = it
+                    prefs.toggleCallsVoiceAnswer = it
+                }
+            }
+        }
+
+        // 10. Contacts
+        item {
+            CategoryToggleCard(
+                categoryIndex = 10,
+                title = "10. Contacts & Priority",
+                subtitle = "Priority contact resolution and disambiguation",
+                icon = Icons.Default.ContactPage,
+                isExpanded = expandedCategories[10] == true,
+                onToggleExpand = { expandedCategories[10] = !(expandedCategories[10] ?: false) }
+            ) {
+                SubToggleRow("Priority Contact Disambiguation", contactsPrio) {
+                    contactsPrio = it
+                    prefs.toggleContactsPriority = it
+                }
+            }
+        }
+
+        // Section: Privacy & Hardware Keystore
+        item {
+            Text(
+                text = "PRIVACY & SECURITY GUARANTEES",
+                color = TextMuted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.2.sp
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            AuraGlassCard(modifier = Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.Lock, contentDescription = null, tint = AuraSuccess, modifier = Modifier.size(20.dp))
+                        Column {
+                            Text("Encrypted Keystore Active", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text("AES-256 GCM hardware-backed encryption", color = TextMuted, fontSize = 12.sp)
+                        }
+                    }
+
+                    Text(
+                        text = "• All voiceprints are stored locally as numeric mathematical embeddings (no raw audio recordings stored).\n• Wake-word detection runs on-device.\n• Complete control to purge memories and history at any time.",
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { viewModel.clearAllMemories() },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Clear Memory", color = AuraCyanPrimary, fontSize = 12.sp)
+                        }
+                        OutlinedButton(
+                            onClick = { viewModel.clearAllHistory() },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Clear History", color = AuraError, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(20.dp))
+        }
+    }
+}
+
+@Composable
+private fun CategoryToggleCard(
+    categoryIndex: Int,
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    AuraGlassCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggleExpand)
+    ) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(AuraVioletSecondary.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = AuraVioletSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = title,
+                            color = TextPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                        Text(
+                            text = subtitle,
+                            color = TextMuted,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                Icon(
+                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = TextMuted,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            AnimatedVisibility(visible = isExpanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    content()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubToggleRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(AuraDarkSurface.copy(alpha = 0.6f))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            color = TextSecondary,
+            fontSize = 13.sp,
+            modifier = Modifier.weight(1f)
+        )
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = AuraCyanPrimary,
+                checkedTrackColor = AuraCyanPrimary.copy(alpha = 0.3f),
+                uncheckedThumbColor = TextMuted,
+                uncheckedTrackColor = AuraDarkSurface
+            )
+        )
+    }
+}

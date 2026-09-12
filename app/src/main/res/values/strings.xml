@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Aura AI</string>
+    <string name="accessibility_service_desc">Aura AI Accessibility Service enables voice commands to interact with screen contents, read active text, and navigate apps hands-free.</string>
+</resources>
