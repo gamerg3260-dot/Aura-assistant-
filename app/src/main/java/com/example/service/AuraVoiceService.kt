@@ -196,6 +196,9 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val isBatteryExempt = com.example.system.BatteryOptimizationHelper.isIgnoringBatteryOptimizations(this)
+        Log.i(tag, "[BACKGROUND_MONITOR_DEBUG] Foreground Voice Service startId=$startId action=${intent?.action} | Battery Optimization Exempt: $isBatteryExempt | Audio Focus: $hasAudioFocus")
+
         when (intent?.action) {
             ACTION_STOP_SERVICE -> {
                 Log.d(tag, "Received ACTION_STOP_SERVICE")
@@ -672,9 +675,23 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
     private fun triggerWakeDetectedFlow(isOwnerVerified: Boolean) {
         _wakeWordDetectedEvent.tryEmit(isOwnerVerified)
 
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+            @Suppress("DEPRECATION")
+            val wl = pm?.newWakeLock(
+                PowerManager.FULL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE,
+                "AuraAI:WakeWordSpotScreenOn"
+            )
+            wl?.acquire(3000L)
+        } catch (e: Exception) {
+            Log.w(tag, "Failed to acquire screen wake lock: ${e.message}")
+        }
+
+        Log.i(tag, "[BACKGROUND_MONITOR_DEBUG] Wake-word triggered! Turning screen on and launching MainActivity. Owner verified: $isOwnerVerified")
+
         // Launch MainActivity with AUTO_TRIGGER_LISTEN extra
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
             putExtra("AUTO_TRIGGER_LISTEN", true)
             putExtra("OWNER_VERIFIED", isOwnerVerified)
         }

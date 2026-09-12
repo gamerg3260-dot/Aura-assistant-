@@ -42,6 +42,45 @@ class GeminiService(
     }
 
     /**
+     * Validates an API key by making a lightweight test request to Gemini API.
+     * Returns Result.success if key is valid, or Result.failure with descriptive error if 401/403/invalid.
+     */
+    suspend fun validateApiKey(keyToTest: String): Result<String> = withContext(Dispatchers.IO) {
+        val cleanKey = keyToTest.trim()
+        if (cleanKey.isBlank()) {
+            return@withContext Result.failure(IllegalArgumentException("API key cannot be empty."))
+        }
+
+        try {
+            val pingRequest = GeminiGenerateContentRequest(
+                contents = listOf(
+                    GeminiContent(
+                        role = "user",
+                        parts = listOf(GeminiPart(text = "Hello! Please reply with 'OK'."))
+                    )
+                ),
+                generationConfig = GeminiGenerationConfig(
+                    temperature = 0.1f,
+                    maxOutputTokens = 10
+                )
+            )
+
+            val response = apiService.generateContent(apiKey = cleanKey, request = pingRequest)
+            if (response.isSuccessful && response.body() != null) {
+                Result.success("API key validated successfully.")
+            } else {
+                val errorCode = response.code()
+                val errorBody = response.errorBody()?.string() ?: ""
+                Log.w(tag, "API Key validation failed with HTTP $errorCode: $errorBody")
+                Result.failure(Exception("Invalid API key — please check and try again."))
+            }
+        } catch (e: Exception) {
+            Log.e(tag, "API Key validation exception: ${e.message}", e)
+            Result.failure(Exception("Invalid API key — please check and try again."))
+        }
+    }
+
+    /**
      * Resolves the active Gemini API key from Android Keystore or BuildConfig.
      */
     fun getEffectiveApiKey(): String {
@@ -114,9 +153,10 @@ class GeminiService(
             // 3. Execute identified tool call on device
             var toolResult: ToolExecutionResult? = null
             if (toolCall != null) {
-                Log.d(tag, "Identified tool call: ${toolCall.functionName} with args: ${toolCall.arguments}")
                 toolResult = executeToolCall(toolCall)
             }
+
+            Log.i(tag, "[INTENT_ROUTER] Raw input: '$command' | Source: 'gemini_api' | Tool: '${toolCall?.functionName ?: "NONE (Conversational)"}' | Args: ${toolCall?.arguments} | Spoken: '$spokenText'")
 
             AssistantCommandResult(
                 spokenResponse = spokenText,
@@ -125,12 +165,16 @@ class GeminiService(
                 executionSource = "gemini_api"
             )
         } catch (e: Exception) {
-            Log.e(tag, "Gemini Retrofit request failed: ${e.message}", e)
+            Log.e(tag, "Gemini Retrofit request failed (${e.message}), executing offline rule engine fallback", e)
             val fallbackReply = runOfflineRuleEngine(command, deviceStats)
             val executedResult = executeLegacyTool(fallbackReply.toolCommand, fallbackReply.toolArg1, fallbackReply.toolArg2)
+            val toolReq = fallbackReply.toolCommand?.let { ToolCallRequest(it, mapOf("arg1" to fallbackReply.toolArg1, "arg2" to fallbackReply.toolArg2)) }
+
+            Log.i(tag, "[INTENT_ROUTER] Raw input: '$command' | Source: 'offline_fallback_exception' | Tool: '${fallbackReply.toolCommand ?: "NONE (Conversational)"}' | Spoken: '${fallbackReply.spokenResponse}'")
+
             AssistantCommandResult(
                 spokenResponse = fallbackReply.spokenResponse,
-                toolCallRequest = fallbackReply.toolCommand?.let { ToolCallRequest(it) },
+                toolCallRequest = toolReq,
                 executedToolResult = executedResult,
                 executionSource = "offline_fallback_exception"
             )
@@ -279,9 +323,16 @@ class GeminiService(
             - Screen Reading Context (Accessibility): ${screenContext ?: "None available / screen is off"}
             - Owner Memory & Personal Facts: ${if (memories.isNotBlank()) memories else "No prior facts stored"}
 
-            Directives:
-            - When the user asks for a device action (app opening, timer, volume, flashlight, search, messaging, calling, screen reading, battery check), call the appropriate tool.
-            - Keep spoken conversational answers concise (1-3 sentences), warm, confident, and natural for text-to-speech synthesis.
+            CRITICAL TOOL ROUTING DIRECTIVES:
+            1. ONLY call 'search_web' if the user EXPLICITLY asks to perform a web search (e.g., 'search for...', 'google...', 'look up...', 'what is the capital of...').
+            2. NEVER call 'search_web' for device control commands, alarms, timers, messages, phone calls, opening apps, or volume/brightness adjustments.
+            3. For phone calls ('call Ravi', 'dial X'), call 'make_call'.
+            4. For WhatsApp messages ('send WhatsApp to X', 'text X on WhatsApp'), call 'send_whatsapp'.
+            5. For alarms ('set an alarm for 7am', 'wake me at 8'), call 'set_alarm'.
+            6. For timers ('set timer for 10 minutes'), call 'set_timer'.
+            7. For launching apps ('open Spotify', 'launch Settings', 'start Camera'), call 'open_app'.
+            8. If a question is general conversation or has no applicable tool, respond directly with spoken text and do NOT call any tool.
+            9. Keep spoken conversational answers concise (1-3 sentences), warm, confident, and natural for text-to-speech.
         """.trimIndent()
 
         // Tools declared for Gemini function calling
@@ -402,7 +453,7 @@ class GeminiService(
                     ),
                     GeminiFunctionDeclaration(
                         name = "search_web",
-                        description = "Search the web using Google",
+                        description = "Search Google on the web. STRICT REQUIREMENT: Only call this tool if user explicitly requests a web search (e.g., 'search for...', 'look up...', 'google...'). NEVER call for system controls, calls, messages, alarms, timers, or opening apps.",
                         parameters = GeminiParametersObject(
                             properties = mapOf(
                                 "query" to GeminiParameterProperty(
@@ -832,35 +883,47 @@ class GeminiService(
                 )
             }
 
-            // Phone Calls (call lagao, call karo)
-            q.startsWith("call") || q.contains("call lagao") || q.contains("call karo") || q.contains("phone lagao") -> {
-                val target = q.replace("call lagao", "")
+            // Phone Calls (call, dial, phone, ring, call lagao, call karo)
+            q.contains("call") || q.contains("dial") || q.contains("phone") || q.contains("ring") || q.contains("lagao") -> {
+                val target = q.replace("make a call to", "")
+                    .replace("call lagao", "")
                     .replace("call karo", "")
                     .replace("phone lagao", "")
+                    .replace("dial", "")
                     .replace("call", "")
-                    .replace("ko", "").trim()
+                    .replace("phone", "")
+                    .replace("ko", "")
+                    .replace("to", "").trim()
                 LlmAssistantReply(
-                    spokenResponse = "$target ko phone dial kar rahi hun.",
+                    spokenResponse = if (target.isNotBlank()) "$target ko call dial kar rahi hun." else "Calling...",
                     toolCommand = "make_call",
                     toolArg1 = target
                 )
             }
 
-            // WhatsApp & SMS
-            q.contains("whatsapp message") || q.contains("whatsapp par message") -> {
+            // WhatsApp & Messages
+            q.contains("whatsapp") -> {
+                val msgText = q.replace("send whatsapp to", "")
+                    .replace("whatsapp message", "")
+                    .replace("whatsapp par", "")
+                    .replace("whatsapp", "").trim()
                 LlmAssistantReply(
-                    spokenResponse = "WhatsApp composer khol rahi hun.",
+                    spokenResponse = "WhatsApp message composer open kar rahi hun.",
                     toolCommand = "send_whatsapp",
                     toolArg1 = "",
-                    toolArg2 = "Hello"
+                    toolArg2 = if (msgText.isNotBlank()) msgText else "Hello"
                 )
             }
-            q.contains("sms bhejo") || q.contains("message bhejo") -> {
+            q.contains("sms") || q.contains("message") || q.contains("text") || q.contains("bhejo") -> {
+                val msgText = q.replace("send message", "")
+                    .replace("send sms", "")
+                    .replace("bhejo", "")
+                    .replace("message", "").trim()
                 LlmAssistantReply(
                     spokenResponse = "SMS composer open kar rahi hun.",
                     toolCommand = "send_sms",
                     toolArg1 = "",
-                    toolArg2 = ""
+                    toolArg2 = msgText
                 )
             }
 
@@ -917,13 +980,13 @@ class GeminiService(
             }
 
             // Specific App Launchers
-            q.contains("youtube") && (q.contains("kholo") || q.contains("open")) -> {
+            q.contains("youtube") && (q.contains("kholo") || q.contains("open") || q.contains("launch") || q.contains("start")) -> {
                 LlmAssistantReply(spokenResponse = "YouTube open kar rahi hun.", toolCommand = "open_app", toolArg1 = "youtube")
             }
-            q.contains("whatsapp") && (q.contains("kholo") || q.contains("open")) -> {
+            q.contains("whatsapp") && (q.contains("kholo") || q.contains("open") || q.contains("launch") || q.contains("start")) -> {
                 LlmAssistantReply(spokenResponse = "WhatsApp open kar rahi hun.", toolCommand = "open_app", toolArg1 = "whatsapp")
             }
-            q.contains("spotify") && (q.contains("kholo") || q.contains("open")) -> {
+            q.contains("spotify") && (q.contains("kholo") || q.contains("open") || q.contains("launch") || q.contains("start")) -> {
                 LlmAssistantReply(spokenResponse = "Spotify open kar rahi hun.", toolCommand = "open_app", toolArg1 = "spotify")
             }
             q.contains("camera") || q.contains("photo khincho") || q.contains("selfie") -> {
@@ -951,9 +1014,11 @@ class GeminiService(
                 LlmAssistantReply(spokenResponse = "Photos open kar rahi hun.", toolCommand = "open_app", toolArg1 = "photos")
             }
 
-            // Generic "open [app]" or "[app] kholo"
-            q.startsWith("open ") || q.endsWith(" kholo") || q.contains(" open karo") -> {
+            // Generic "open [app]" or "launch [app]" or "[app] kholo"
+            q.startsWith("open ") || q.startsWith("launch ") || q.startsWith("start ") || q.endsWith(" kholo") || q.contains(" open karo") -> {
                 val appName = q.replace("open ", "")
+                    .replace("launch ", "")
+                    .replace("start ", "")
                     .replace(" kholo", "")
                     .replace(" open karo", "")
                     .replace(" app", "")
@@ -965,33 +1030,34 @@ class GeminiService(
                 )
             }
 
-            // Web Search
-            q.contains("search") || q.contains("google") || q.contains("khojo") -> {
+            // Web Search — STRICT: require explicit search keywords!
+            q.startsWith("search") || q.contains(" search ") || q.contains("google") || q.contains("khojo") || q.startsWith("what is") || q.startsWith("who is") || q.startsWith("look up") -> {
                 val searchQuery = q.replace("search for", "")
                     .replace("search", "")
                     .replace("google", "")
                     .replace("par khojo", "")
-                    .replace("khojo", "").trim()
+                    .replace("khojo", "")
+                    .replace("look up", "").trim()
                 LlmAssistantReply(
-                    spokenResponse = "Google par '$searchQuery' search kar rahi hun.",
+                    spokenResponse = "Google par '${if (searchQuery.isNotBlank()) searchQuery else query}' search kar rahi hun.",
                     toolCommand = "search_web",
-                    toolArg1 = searchQuery
+                    toolArg1 = if (searchQuery.isNotBlank()) searchQuery else query
                 )
             }
 
             // Greeting & Assistant Identity
             q.contains("hello") || q.contains("hi aura") || q.contains("hey aura") || q.contains("namaste") -> {
-                LlmAssistantReply(spokenResponse = "Namaste $userName! Main Aura hun, aapka smart personal assistant. Main aapke phone ki sabhi activities control karne ke liye ready hun. Bataiye kya karna hai?")
+                LlmAssistantReply(spokenResponse = "Namaste $userName! Main Aura hun, aapki smart personal assistant. Bataiye main aapke phone par kya control karun?")
             }
             q.contains("who are you") || q.contains("tum kaun ho") || q.contains("aap kaun ho") -> {
-                LlmAssistantReply(spokenResponse = "Main Aura hun, aapka fully authorized smart voice assistant. Main aapke phone ki calls, messages, flashlight, volume, apps, alarm, maps aur navigation sab control kar sakti hun.")
+                LlmAssistantReply(spokenResponse = "Main Aura hun, aapki fully authorized smart voice assistant. Main aapke phone ki calls, messages, flashlight, volume, apps, alarm aur navigation sab control kar sakti hun.")
             }
 
+            // Conversational fallback — DO NOT trigger search_web by default!
             else -> {
                 LlmAssistantReply(
-                    spokenResponse = "Aapka aadesh samajh aa gaya hai $userName. Main action execute kar rahi hun.",
-                    toolCommand = "search_web",
-                    toolArg1 = query
+                    spokenResponse = "Aapka aadesh samajh aa gaya hai $userName. Main action process kar rahi hun.",
+                    toolCommand = null
                 )
             }
         }

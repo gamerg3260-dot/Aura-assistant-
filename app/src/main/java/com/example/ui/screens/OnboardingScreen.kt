@@ -82,6 +82,8 @@ fun OnboardingScreen(
     val licenseKey by viewModel.tempLicenseKey.collectAsState()
     val licenseError by viewModel.licenseError.collectAsState()
     val apiKey by viewModel.tempApiKey.collectAsState()
+    val isValidatingApiKey by viewModel.isValidatingApiKey.collectAsState()
+    val apiKeyError by viewModel.apiKeyError.collectAsState()
 
     Column(
         modifier = Modifier
@@ -154,6 +156,8 @@ fun OnboardingScreen(
                     )
                     3 -> StepApiKey(
                         apiKey = apiKey,
+                        isValidating = isValidatingApiKey,
+                        error = apiKeyError,
                         onKeyChange = { viewModel.setTempApiKey(it) }
                     )
                 }
@@ -163,34 +167,47 @@ fun OnboardingScreen(
         // Action Button
         Button(
             onClick = {
-                val success = viewModel.nextOnboardingStep()
-                if (success && step == 3) {
-                    onOnboardingComplete()
-                }
+                viewModel.nextOnboardingStep(onStepCompleted = onOnboardingComplete)
             },
+            enabled = !isValidatingApiKey,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(54.dp),
-                shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = AuraCyanPrimary,
-                contentColor = Color(0xFF070B13)
+                contentColor = Color(0xFF070B13),
+                disabledContainerColor = AuraCyanPrimary.copy(alpha = 0.5f),
+                disabledContentColor = Color(0xFF070B13).copy(alpha = 0.5f)
             )
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(
-                    text = if (step == 3) "Start Aura Assistant" else "Next Step",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
-                )
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
+                if (isValidatingApiKey) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = Color(0xFF070B13),
+                        strokeWidth = 2.dp
+                    )
+                    Text(
+                        text = "Validating Key...",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                } else {
+                    Text(
+                        text = if (step == 3) "Start Aura Assistant" else "Next Step",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
     }
@@ -422,6 +439,8 @@ private fun StepLicense(
 @Composable
 private fun StepApiKey(
     apiKey: String,
+    isValidating: Boolean,
+    error: String?,
     onKeyChange: (String) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -456,17 +475,29 @@ private fun StepApiKey(
             onValueChange = onKeyChange,
             placeholder = { Text("AIzaSy... (or Claude Key)", color = TextMuted) },
             singleLine = true,
+            isError = error != null,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = AuraCyanPrimary,
-                unfocusedBorderColor = AuraCardBorder,
+                focusedBorderColor = if (error != null) AuraError else AuraCyanPrimary,
+                unfocusedBorderColor = if (error != null) AuraError else AuraCardBorder,
+                errorBorderColor = AuraError,
                 focusedTextColor = TextPrimary,
                 unfocusedTextColor = TextPrimary,
                 focusedContainerColor = AuraDarkSurface,
                 unfocusedContainerColor = AuraDarkSurface
             )
         )
+
+        if (error != null) {
+            Text(
+                text = error,
+                color = AuraError,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(top = 6.dp, start = 4.dp)
+            )
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 

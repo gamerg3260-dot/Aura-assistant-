@@ -195,6 +195,179 @@ fun SettingsScreen(
             )
         }
 
+        // Section: LLM & Gemini API Configuration
+        item {
+            val hasConfiguredKey by viewModel.hasConfiguredApiKey.collectAsState()
+            val isValidatingKey by viewModel.isValidatingApiKey.collectAsState()
+            val apiKeyError by viewModel.apiKeyError.collectAsState()
+            val apiKeySuccess by viewModel.apiKeySuccessMessage.collectAsState()
+            val currentKeyInput by viewModel.tempApiKey.collectAsState()
+
+            var apiKeyFieldText by remember(currentKeyInput) { mutableStateOf(currentKeyInput) }
+            var isApiKeyMasked by remember { mutableStateOf(true) }
+
+            Text(
+                text = "LLM & GEMINI API CONFIGURATION",
+                color = TextMuted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.2.sp
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            AuraGlassCard(modifier = Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(if (hasConfiguredKey) AuraSuccess.copy(alpha = 0.15f) else AuraCyanPrimary.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.VpnKey,
+                                    contentDescription = null,
+                                    tint = if (hasConfiguredKey) AuraSuccess else AuraCyanPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            Column {
+                                Text("Gemini API Engine", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text(
+                                    text = if (hasConfiguredKey) "Hardware Keystore Active (AES-256)" else "No key configured (Offline rule engine fallback)",
+                                    color = if (hasConfiguredKey) AuraSuccess else TextMuted,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (hasConfiguredKey) AuraSuccess.copy(alpha = 0.15f) else AuraDarkSurface)
+                                .border(1.dp, if (hasConfiguredKey) AuraSuccess.copy(alpha = 0.3f) else AuraCardBorder, RoundedCornerShape(8.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = if (hasConfiguredKey) "VALIDATED" else "OFFLINE",
+                                color = if (hasConfiguredKey) AuraSuccess else TextMuted,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = apiKeyFieldText,
+                        onValueChange = {
+                            apiKeyFieldText = it
+                            viewModel.setTempApiKey(it)
+                        },
+                        placeholder = { Text("AIzaSy... (Gemini / Claude API Key)", color = TextMuted, fontSize = 12.sp) },
+                        singleLine = true,
+                        isError = apiKeyError != null,
+                        visualTransformation = if (isApiKeyMasked) PasswordVisualTransformation() else VisualTransformation.None,
+                        trailingIcon = {
+                            IconButton(onClick = { isApiKeyMasked = !isApiKeyMasked }) {
+                                Icon(
+                                    imageVector = if (isApiKeyMasked) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = if (isApiKeyMasked) "Show Key" else "Hide Key",
+                                    tint = TextMuted,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = if (apiKeyError != null) AuraError else AuraCyanPrimary,
+                            unfocusedBorderColor = if (apiKeyError != null) AuraError else AuraCardBorder,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedContainerColor = AuraDarkSurface,
+                            unfocusedContainerColor = AuraDarkSurface
+                        )
+                    )
+
+                    if (apiKeyError != null) {
+                        Text(
+                            text = apiKeyError ?: "",
+                            color = AuraError,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(start = 2.dp)
+                        )
+                    }
+
+                    if (apiKeySuccess != null) {
+                        Text(
+                            text = apiKeySuccess ?: "",
+                            color = AuraSuccess,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(start = 2.dp)
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                viewModel.validateAndSaveApiKey(apiKeyFieldText)
+                            },
+                            enabled = !isValidatingKey && apiKeyFieldText.isNotBlank(),
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AuraCyanPrimary,
+                                contentColor = Color(0xFF070B13),
+                                disabledContainerColor = AuraCyanPrimary.copy(alpha = 0.4f),
+                                disabledContentColor = Color(0xFF070B13).copy(alpha = 0.4f)
+                            )
+                        ) {
+                            if (isValidatingKey) {
+                                androidx.compose.material3.CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = Color(0xFF070B13),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Verifying...", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            } else {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Validate & Save Key", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        if (hasConfiguredKey || apiKeyFieldText.isNotBlank()) {
+                            OutlinedButton(
+                                onClick = {
+                                    apiKeyFieldText = ""
+                                    viewModel.clearApiKey()
+                                },
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = null, tint = AuraError, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Clear", color = AuraError, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Section: Voice Biometrics
         item {
             Text(

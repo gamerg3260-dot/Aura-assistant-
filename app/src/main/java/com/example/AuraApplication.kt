@@ -30,6 +30,8 @@ class AuraApplication : Application() {
         private set
     lateinit var spokenOutputManager: GeminiSpokenOutputManager
         private set
+    lateinit var callManager: com.example.system.AuraCallManager
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -44,6 +46,15 @@ class AuraApplication : Application() {
         theftGuardManager = com.example.security.TheftGuardManager(this)
         geminiService = GeminiService(this, keystoreManager, preferences, deviceController, toolExecutionModule)
         spokenOutputManager = GeminiSpokenOutputManager(this, preferences.selectedLanguageCode)
+        callManager = com.example.system.AuraCallManager(
+            context = this,
+            preferences = preferences,
+            onIncomingCallDetected = { callerName, _ ->
+                if (preferences.toggleCallsAnnouncer) {
+                    spokenOutputManager.speakGeminiResponse("Incoming call from $callerName. Say Answer or Reject.")
+                }
+            }
+        )
     }
 
     companion object {

@@ -113,6 +113,18 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
     private val _tempApiKey = MutableStateFlow(keystore.retrieveAndDecrypt("user_llm_api_key") ?: "")
     val tempApiKey: StateFlow<String> = _tempApiKey.asStateFlow()
 
+    private val _isValidatingApiKey = MutableStateFlow(false)
+    val isValidatingApiKey: StateFlow<Boolean> = _isValidatingApiKey.asStateFlow()
+
+    private val _apiKeyError = MutableStateFlow<String?>(null)
+    val apiKeyError: StateFlow<String?> = _apiKeyError.asStateFlow()
+
+    private val _apiKeySuccessMessage = MutableStateFlow<String?>(null)
+    val apiKeySuccessMessage: StateFlow<String?> = _apiKeySuccessMessage.asStateFlow()
+
+    private val _hasConfiguredApiKey = MutableStateFlow(!geminiService.getEffectiveApiKey().isNullOrBlank())
+    val hasConfiguredApiKey: StateFlow<Boolean> = _hasConfiguredApiKey.asStateFlow()
+
     // Preferences mirrors
     private val _isVoiceEnrolled = MutableStateFlow(prefs.isVoiceEnrolled)
     val isVoiceEnrolled: StateFlow<Boolean> = _isVoiceEnrolled.asStateFlow()
@@ -295,9 +307,50 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setTempApiKey(key: String) {
         _tempApiKey.value = key
+        _apiKeyError.value = null
+        _apiKeySuccessMessage.value = null
     }
 
-    fun nextOnboardingStep(): Boolean {
+    fun validateAndSaveApiKey(key: String, onResult: ((Boolean, String) -> Unit)? = null) {
+        val cleanKey = key.trim()
+        if (cleanKey.isBlank()) {
+            _apiKeyError.value = "API key cannot be empty."
+            onResult?.invoke(false, "API key cannot be empty.")
+            return
+        }
+
+        viewModelScope.launch {
+            _isValidatingApiKey.value = true
+            _apiKeyError.value = null
+            _apiKeySuccessMessage.value = null
+
+            val result = geminiService.validateApiKey(cleanKey)
+            _isValidatingApiKey.value = false
+
+            if (result.isSuccess) {
+                keystore.encryptAndStore("user_llm_api_key", cleanKey)
+                _tempApiKey.value = cleanKey
+                _hasConfiguredApiKey.value = true
+                _apiKeySuccessMessage.value = "API key verified and stored securely in Android Keystore."
+                _apiKeyError.value = null
+                onResult?.invoke(true, "API key verified and stored securely.")
+            } else {
+                val errorText = result.exceptionOrNull()?.message ?: "Invalid API key — please check and try again."
+                _apiKeyError.value = errorText
+                onResult?.invoke(false, errorText)
+            }
+        }
+    }
+
+    fun clearApiKey() {
+        keystore.encryptAndStore("user_llm_api_key", "")
+        _tempApiKey.value = ""
+        _hasConfiguredApiKey.value = false
+        _apiKeyError.value = null
+        _apiKeySuccessMessage.value = null
+    }
+
+    fun nextOnboardingStep(onStepCompleted: (() -> Unit)? = null): Boolean {
         when (_onboardingStep.value) {
             1 -> {
                 if (_tempUserName.value.isNotBlank()) {
@@ -316,11 +369,20 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
             3 -> {
                 val key = _tempApiKey.value.trim()
                 if (key.isNotBlank()) {
-                    keystore.encryptAndStore("user_llm_api_key", key)
+                    validateAndSaveApiKey(key) { success, _ ->
+                        if (success) {
+                            prefs.isLicenseValidated = true
+                            prefs.isOnboardingCompleted = true
+                            onStepCompleted?.invoke()
+                        }
+                    }
+                    return false
+                } else {
+                    prefs.isLicenseValidated = true
+                    prefs.isOnboardingCompleted = true
+                    onStepCompleted?.invoke()
+                    return true
                 }
-                prefs.isLicenseValidated = true
-                prefs.isOnboardingCompleted = true
-                return true
             }
         }
         return false
@@ -551,12 +613,6 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
                     languageCode = prefs.selectedLanguageCode
                 )
             )
-
-            delay(1500)
-            if (_listeningState.value == AssistantListeningState.SPEAKING && !(speechManager?.isSpeaking?.value ?: false)) {
-                _listeningState.value = AssistantListeningState.STANDBY
-                _statusMessage.value = "Ready"
-            }
         }
     }
 

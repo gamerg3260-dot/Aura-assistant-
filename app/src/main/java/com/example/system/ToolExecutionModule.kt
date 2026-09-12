@@ -506,6 +506,9 @@ class ToolExecutionModule(
     }
 
     fun sendWhatsApp(phoneNumber: String, text: String): ToolExecutionResult {
+        if (!preferences.toggleCommWhatsapp) {
+            return ToolExecutionResult("WhatsApp", "WhatsApp messaging is disabled in assistant settings", false)
+        }
         return try {
             val uri = Uri.parse("https://api.whatsapp.com/send?phone=$phoneNumber&text=${Uri.encode(text)}")
             val intent = Intent(Intent.ACTION_VIEW, uri).apply {
@@ -519,6 +522,9 @@ class ToolExecutionModule(
     }
 
     fun sendSms(phoneNumber: String, text: String): ToolExecutionResult {
+        if (!preferences.toggleCommSms) {
+            return ToolExecutionResult("SMS", "SMS messaging is disabled in assistant settings", false)
+        }
         return try {
             val uri = Uri.parse("smsto:$phoneNumber")
             val intent = Intent(Intent.ACTION_SENDTO, uri).apply {
@@ -533,18 +539,42 @@ class ToolExecutionModule(
     }
 
     fun makeCall(phoneNumber: String): ToolExecutionResult {
-        return try {
-            val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phoneNumber")).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(intent)
-            ToolExecutionResult("Phone Call", "Dialing $phoneNumber", true)
-        } catch (e: Exception) {
-            ToolExecutionResult("Phone Call", "Failed to initiate call: ${e.message}", false)
+        if (!preferences.toggleCommPhoneCalls) {
+            return ToolExecutionResult("Phone Call", "Phone calling is disabled in assistant settings", false)
+        }
+        val success = com.example.AuraApplication.instance.callManager.dialOrCall(phoneNumber)
+        return if (success) {
+            ToolExecutionResult("Phone Call", "Initiating call to $phoneNumber", true)
+        } else {
+            ToolExecutionResult("Phone Call", "Failed to place call to $phoneNumber", false)
+        }
+    }
+
+    fun answerCall(): ToolExecutionResult {
+        if (!preferences.toggleCallsVoiceAnswer) {
+            return ToolExecutionResult("Call Answer", "Voice call answering is disabled in settings", false)
+        }
+        val answered = com.example.AuraApplication.instance.callManager.answerCall()
+        return if (answered) {
+            ToolExecutionResult("Call Answer", "Answered incoming call", true)
+        } else {
+            ToolExecutionResult("Call Answer", "Could not answer call (requires permission)", false)
+        }
+    }
+
+    fun rejectCall(): ToolExecutionResult {
+        val rejected = com.example.AuraApplication.instance.callManager.rejectCall()
+        return if (rejected) {
+            ToolExecutionResult("Call Reject", "Declined incoming call", true)
+        } else {
+            ToolExecutionResult("Call Reject", "Could not decline call", false)
         }
     }
 
     fun openSpotifySearch(query: String): ToolExecutionResult {
+        if (!preferences.toggleMediaSpotify) {
+            return ToolExecutionResult("Spotify", "Spotify integration is disabled in settings", false)
+        }
         return try {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse("spotify:search:${Uri.encode(query)}")).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -561,6 +591,9 @@ class ToolExecutionModule(
     }
 
     fun openYouTubeSearch(query: String): ToolExecutionResult {
+        if (!preferences.toggleMediaYoutube) {
+            return ToolExecutionResult("YouTube", "YouTube integration is disabled in settings", false)
+        }
         return try {
             val intent = Intent(Intent.ACTION_SEARCH).apply {
                 setPackage("com.google.android.youtube")
@@ -821,6 +854,14 @@ class ToolExecutionModule(
             "make_call", "makecall", "call", "dial" -> {
                 val phone = args["phone_number"]?.toString() ?: args["phone"]?.toString() ?: args["arg1"]?.toString() ?: ""
                 makeCall(phone)
+            }
+
+            "answer_call", "answercall", "accept_call", "acceptcall", "answer" -> {
+                answerCall()
+            }
+
+            "reject_call", "rejectcall", "decline_call", "declinecall", "hang_up", "hangup", "end_call", "endcall", "reject" -> {
+                rejectCall()
             }
 
             // Settings
