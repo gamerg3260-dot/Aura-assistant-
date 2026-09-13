@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -136,6 +137,28 @@ fun SettingsScreen(
     val activeCustomVoiceProfile by viewModel.activeCustomVoiceProfile.collectAsState()
     val isRecordingVoiceSample by viewModel.isRecordingVoiceSample.collectAsState()
     val isPlayingSample by viewModel.isPlayingSample.collectAsState()
+
+    // Continuous Conversation States
+    var isContinuousEnabled by remember { mutableStateOf(prefs.isContinuousConversationEnabled) }
+    var continuousSilenceTimeout by remember { mutableStateOf(prefs.continuousSilenceTimeoutSeconds.toFloat()) }
+
+    // Device Admin Intruder Guard & Face Enrollment States
+    var isDeviceAdminEnabled by remember { mutableStateOf(prefs.isDeviceAdminIntruderGuardEnabled) }
+    val isOwnerFaceEnrolled by viewModel.isOwnerFaceEnrolled.collectAsState()
+
+    val context = LocalContext.current
+    val takePicturePreviewLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview()
+    ) { bitmap: Bitmap? ->
+        if (bitmap != null) {
+            val enrolled = viewModel.enrollOwnerFace(bitmap)
+            if (enrolled) {
+                android.widget.Toast.makeText(context, "Owner face enrolled successfully!", android.widget.Toast.LENGTH_SHORT).show()
+            } else {
+                android.widget.Toast.makeText(context, "Face enrollment failed. Ensure face is clear.", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     var showImportNameDialog by remember { mutableStateOf(false) }
     var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
@@ -490,6 +513,80 @@ fun SettingsScreen(
                             Icon(Icons.Default.Delete, contentDescription = null, tint = AuraError, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Clear Voice", color = AuraError, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Section: Continuous Conversation
+        item {
+            Text(
+                text = "CONTINUOUS CONVERSATION",
+                color = TextMuted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.2.sp
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            AuraGlassCard(modifier = Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Siri-Style Active Session", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(
+                                text = "Keep listening back-and-forth after wake word triggers without repeating 'Hey Aura'",
+                                color = TextMuted,
+                                fontSize = 12.sp
+                            )
+                        }
+                        Switch(
+                            checked = isContinuousEnabled,
+                            onCheckedChange = {
+                                isContinuousEnabled = it
+                                prefs.isContinuousConversationEnabled = it
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = AuraCyanPrimary,
+                                checkedTrackColor = AuraCyanPrimary.copy(alpha = 0.4f),
+                                uncheckedThumbColor = TextMuted,
+                                uncheckedTrackColor = AuraCardBorder
+                            )
+                        )
+                    }
+
+                    AnimatedVisibility(visible = isContinuousEnabled) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Speech Silence Timeout", color = TextSecondary, fontSize = 12.sp)
+                                Text("${continuousSilenceTimeout.toInt()}s", color = AuraCyanPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                            Slider(
+                                value = continuousSilenceTimeout,
+                                onValueChange = {
+                                    continuousSilenceTimeout = it
+                                    prefs.continuousSilenceTimeoutSeconds = it.toInt()
+                                },
+                                valueRange = 4f..12f,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = AuraCyanPrimary,
+                                    activeTrackColor = AuraCyanPrimary,
+                                    inactiveTrackColor = AuraCardBorder
+                                )
+                            )
+                            Text(
+                                text = "Tips: Say 'stop', 'bye', or 'cancel' at any time during an active session to exit instantly.",
+                                color = TextMuted,
+                                fontSize = 11.sp
+                            )
                         }
                     }
                 }
@@ -1694,6 +1791,90 @@ fun SettingsScreen(
                     prefs.toggleSecurityIntruderAlert = it
                 }
 
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("SMART LOCK-SCREEN INTRUDER GUARD", color = AuraCyanPrimary, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 0.8.sp)
+                
+                SubToggleRow("Enable Lock-Screen Guard (Device Admin)", isDeviceAdminEnabled) { checked ->
+                    isDeviceAdminEnabled = checked
+                    prefs.isDeviceAdminIntruderGuardEnabled = checked
+                    if (checked) {
+                        try {
+                            val componentName = android.content.ComponentName(context, com.example.security.AuraDeviceAdminReceiver::class.java)
+                            val intent = Intent(android.app.admin.DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                                putExtra(android.app.admin.DevicePolicyManager.EXTRA_DEVICE_ADMIN, componentName)
+                                putExtra(android.app.admin.DevicePolicyManager.EXTRA_ADD_EXPLANATION, "Aura uses Device Administrator to detect failed lock screen password attempts and guard against device theft.")
+                            }
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            android.widget.Toast.makeText(context, "Failed to launch device admin settings.", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("OWNER FACE CALIBRATION", color = AuraCyanPrimary, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 0.8.sp)
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Face Recognition Calibration", color = TextPrimary, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                        Text(
+                            text = if (isOwnerFaceEnrolled) "Face footprint registered securely" else "No face footprints enrolled yet",
+                            color = if (isOwnerFaceEnrolled) AuraSuccess else TextMuted,
+                            fontSize = 11.sp
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (isOwnerFaceEnrolled) AuraSuccess.copy(alpha = 0.15f) else AuraError.copy(alpha = 0.15f))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = if (isOwnerFaceEnrolled) "CALIBRATED" else "NOT ENROLLED",
+                            color = if (isOwnerFaceEnrolled) AuraSuccess else AuraError,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = { takePicturePreviewLauncher.launch(null) },
+                        modifier = Modifier.weight(1.5f),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AuraCyanPrimary,
+                            contentColor = Color(0xFF070B13)
+                        )
+                    ) {
+                        Icon(Icons.Default.RecordVoiceOver, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(if (isOwnerFaceEnrolled) "Re-Calibrate" else "Calibrate Face", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    if (isOwnerFaceEnrolled) {
+                        OutlinedButton(
+                            onClick = { viewModel.deleteOwnerFace() },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = null, tint = AuraError, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Delete Face", color = AuraError, fontSize = 11.sp)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1741,11 +1922,17 @@ fun SettingsScreen(
             ) {
                 SubToggleRow("Incoming Caller Announcer", callAnnounce) {
                     callAnnounce = it
-                    prefs.toggleCallsAnnouncer = it
+                    viewModel.toggleCallAnnouncer(it)
                 }
                 SubToggleRow("Voice-Controlled Answer / Reject", callVoiceAnswer) {
                     callVoiceAnswer = it
                     prefs.toggleCallsVoiceAnswer = it
+                }
+                TextButton(
+                    onClick = { viewModel.testCallAnnouncement() },
+                    modifier = Modifier.padding(start = 8.dp, top = 4.dp)
+                ) {
+                    Text("🔊 Test Call Announce", color = AuraCyanPrimary)
                 }
             }
         }

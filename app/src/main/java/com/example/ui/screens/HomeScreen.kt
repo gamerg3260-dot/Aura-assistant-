@@ -121,6 +121,7 @@ fun HomeScreen(
     val lastScreenAnalysis by viewModel.lastScreenAnalysis.collectAsState()
     val isPorcupineActive by viewModel.isPorcupineActive.collectAsState()
     val selectedPorcupineKeyword by viewModel.selectedPorcupineKeyword.collectAsState()
+    val isContinuousActive by viewModel.isContinuousSessionActive.collectAsState()
 
     val porcupineInfiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "porcupine_cue_home")
     val porcupineBorderPulseAlpha by porcupineInfiniteTransition.animateFloat(
@@ -310,6 +311,49 @@ fun HomeScreen(
                                 Text(
                                     text = "PORCUPINE LISTENING • \"${selectedPorcupineKeyword.ifBlank { "JARVIS" }.uppercase()}\"",
                                     color = AuraCyanBright,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.6.sp
+                                )
+                            }
+                        }
+                    }
+
+                    // Siri Continuous Conversation Active Banner
+                    AnimatedVisibility(visible = isContinuousActive) {
+                        Box(
+                            modifier = Modifier
+                                .padding(bottom = 12.dp)
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(AuraPinkTertiary.copy(alpha = 0.15f))
+                                .border(
+                                    width = 1.5.dp,
+                                    color = AuraPinkTertiary.copy(alpha = porcupineBorderPulseAlpha),
+                                    shape = RoundedCornerShape(20.dp)
+                                )
+                                .padding(horizontal = 14.dp, vertical = 6.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(14.dp)
+                                            .clip(CircleShape)
+                                            .background(AuraPinkTertiary.copy(alpha = porcupineBorderPulseAlpha * 0.45f))
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(AuraPinkTertiary)
+                                    )
+                                }
+                                Text(
+                                    text = "CONTINUOUS CONVERSATION LIVE",
+                                    color = AuraPinkTertiary,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 0.6.sp

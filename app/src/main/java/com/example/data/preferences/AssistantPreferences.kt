@@ -178,6 +178,28 @@ class AssistantPreferences(context: Context) {
         get() = prefs.getBoolean("toggle_sec_intruder", true)
         set(value) = prefs.edit().putBoolean("toggle_sec_intruder", value).apply()
 
+    // Continuous Conversation (Siri-like active session)
+    var isContinuousConversationEnabled: Boolean
+        get() = prefs.getBoolean("is_continuous_conversation_enabled", true)
+        set(value) = prefs.edit().putBoolean("is_continuous_conversation_enabled", value).apply()
+
+    var continuousSilenceTimeoutSeconds: Int
+        get() = prefs.getInt("continuous_silence_timeout_seconds", 6)
+        set(value) = prefs.edit().putInt("continuous_silence_timeout_seconds", value).apply()
+
+    // Device Admin Intruder Guard & Owner Face Verification
+    var isDeviceAdminIntruderGuardEnabled: Boolean
+        get() = prefs.getBoolean("is_device_admin_intruder_guard_enabled", false)
+        set(value) = prefs.edit().putBoolean("is_device_admin_intruder_guard_enabled", value).apply()
+
+    var isOwnerFaceEnrolled: Boolean
+        get() = prefs.getBoolean("is_owner_face_enrolled", false)
+        set(value) = prefs.edit().putBoolean("is_owner_face_enrolled", value).apply()
+
+    var ownerFaceDataString: String
+        get() = prefs.getString("owner_face_data_string", "") ?: ""
+        set(value) = prefs.edit().putString("owner_face_data_string", value).apply()
+
     // 9. Calls
     var toggleCallsAnnouncer: Boolean
         get() = prefs.getBoolean("toggle_calls_announcer", true)

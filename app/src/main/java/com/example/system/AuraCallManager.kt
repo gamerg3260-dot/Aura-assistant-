@@ -71,7 +71,12 @@ class AuraCallManager(
         ) == PackageManager.PERMISSION_GRANTED
 
         if (!hasPhoneStatePermission) {
-            Log.d(tag, "READ_PHONE_STATE permission not yet granted; call listener standby.")
+            Log.d(tag, "[CALL_ANNOUNCER] READ_PHONE_STATE permission not yet granted; call listener standby.")
+            return
+        }
+
+        if (telephonyCallback != null || legacyPhoneStateListener != null) {
+            Log.d(tag, "[CALL_ANNOUNCER] Telephony listener already active.")
             return
         }
 
@@ -86,7 +91,7 @@ class AuraCallManager(
                 }
                 telephonyCallback = callback
                 tm.registerTelephonyCallback(context.mainExecutor, callback)
-                Log.d(tag, "TelephonyCallback registered successfully for Android 12+.")
+                Log.d(tag, "[CALL_ANNOUNCER] TelephonyCallback registered successfully for Android 12+.")
             } else {
                 val listener = object : PhoneStateListener() {
                     @Deprecated("Deprecated in Java")
@@ -97,10 +102,23 @@ class AuraCallManager(
                 legacyPhoneStateListener = listener
                 @Suppress("DEPRECATION")
                 tm.listen(listener, PhoneStateListener.LISTEN_CALL_STATE)
-                Log.d(tag, "Legacy PhoneStateListener registered successfully.")
+                Log.d(tag, "[CALL_ANNOUNCER] Legacy PhoneStateListener registered successfully.")
             }
         } catch (e: Exception) {
-            Log.w(tag, "Could not register call listener: ${e.message}")
+            Log.w(tag, "[CALL_ANNOUNCER] Could not register call listener: ${e.message}")
+        }
+    }
+
+    /**
+     * Tests the call announcer pipeline directly, verifying toggle state and TTS trigger.
+     */
+    fun testAnnounceCall(callerName: String = "John Doe"): String {
+        Log.i(tag, "[CALL_ANNOUNCER] Testing call announcer for '$callerName'. Toggle state: ${preferences.toggleCallsAnnouncer}")
+        return if (preferences.toggleCallsAnnouncer) {
+            onIncomingCallDetected?.invoke(callerName, "+1-555-0199")
+            "Test announcement triggered for $callerName"
+        } else {
+            "Call announcer toggle is OFF in Settings. Turn it ON to hear announcements."
         }
     }
 
@@ -113,7 +131,7 @@ class AuraCallManager(
                 val resolvedName = resolveContactName(resolvedNumber)
                 _incomingCallerName.value = resolvedName
 
-                Log.d(tag, "Incoming call detected from $resolvedName ($resolvedNumber)")
+                Log.i(tag, "[CALL_ANNOUNCER] RINGING detected from '$resolvedName' ($resolvedNumber). Toggle state: ${preferences.toggleCallsAnnouncer}")
                 if (preferences.toggleCallsAnnouncer) {
                     onIncomingCallDetected?.invoke(resolvedName, resolvedNumber)
                 }

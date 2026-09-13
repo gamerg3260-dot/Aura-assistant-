@@ -1,8 +1,10 @@
 package com.example.ui
 
 import android.app.Application
+import android.graphics.Bitmap
 import android.net.Uri
 import android.speech.SpeechRecognizer
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.AuraApplication
@@ -369,6 +371,29 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // Face Enrollment State & Helpers
+    private val _isOwnerFaceEnrolled = MutableStateFlow(app.theftGuardManager.ownerFaceManager.isOwnerFaceEnrolled())
+    val isOwnerFaceEnrolled: StateFlow<Boolean> = _isOwnerFaceEnrolled.asStateFlow()
+
+    fun enrollOwnerFace(bitmap: Bitmap): Boolean {
+        val success = app.theftGuardManager.ownerFaceManager.enrollOwnerFace(bitmap)
+        _isOwnerFaceEnrolled.value = app.theftGuardManager.ownerFaceManager.isOwnerFaceEnrolled()
+        prefs.isOwnerFaceEnrolled = _isOwnerFaceEnrolled.value
+        return success
+    }
+
+    fun deleteOwnerFace() {
+        app.theftGuardManager.ownerFaceManager.deleteOwnerFace()
+        _isOwnerFaceEnrolled.value = false
+        prefs.isOwnerFaceEnrolled = false
+    }
+
+    // Continuous Conversation State
+    private val _isContinuousSessionActive = MutableStateFlow(false)
+    val isContinuousSessionActive: StateFlow<Boolean> = _isContinuousSessionActive.asStateFlow()
+
+    private var silenceTimeoutJob: Job? = null
+
     private fun initSpeechManager() {
         speechManager = AuraSpeechManager(
             context = getApplication(),
@@ -380,6 +405,12 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
             },
             onErrorCallback = { error ->
                 viewModelScope.launch {
+                    if (_isContinuousSessionActive.value) {
+                        Log.d("AuraViewModel", "Continuous session error callback triggered ($error). Ending session.")
+                        endContinuousSession("Silence or error")
+                        return@launch
+                    }
+
                     if (_listeningState.value == AssistantListeningState.SPEECH_LISTENING) {
                         _listeningState.value = AssistantListeningState.STANDBY
                         val errorText = when (error) {
@@ -396,6 +427,37 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         )
+    }
+
+    fun startContinuousSession() {
+        if (prefs.isContinuousConversationEnabled) {
+            _isContinuousSessionActive.value = true
+            com.example.voice.SessionAudioCueHelper.playSessionStartCue(app)
+        }
+    }
+
+    fun endContinuousSession(reason: String) {
+        val wasActive = _isContinuousSessionActive.value
+        _isContinuousSessionActive.value = false
+        silenceTimeoutJob?.cancel()
+        silenceTimeoutJob = null
+        if (wasActive) {
+            com.example.voice.SessionAudioCueHelper.playSessionEndCue(app)
+        }
+        _listeningState.value = AssistantListeningState.STANDBY
+        _statusMessage.value = "Ready"
+        com.example.service.AuraVoiceService.resumeFromActiveListening()
+    }
+
+    private fun startContinuousSilenceTimeout() {
+        silenceTimeoutJob?.cancel()
+        silenceTimeoutJob = viewModelScope.launch {
+            delay(prefs.continuousSilenceTimeoutSeconds * 1000L)
+            if (_isContinuousSessionActive.value && _listeningState.value == AssistantListeningState.SPEECH_LISTENING) {
+                Log.d("AuraViewModel", "Continuous conversation silence timeout reached.")
+                endContinuousSession("Silence timeout")
+            }
+        }
     }
 
     fun refreshDeviceData() {
@@ -519,6 +581,15 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
         _licenseError.value = null
     }
 
+    fun toggleCallAnnouncer(enabled: Boolean) {
+        prefs.toggleCallsAnnouncer = enabled
+        app.callManager.registerCallListener()
+    }
+
+    fun testCallAnnouncement(): String {
+        return app.callManager.testAnnounceCall("John Doe")
+    }
+
     // --- Voice Enrollment ---
 
     fun recordEnrollmentPhrase(simulatedVariation: Float = 0.04f) {
@@ -619,7 +690,9 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
                 // Owner verified or Direct Assist Invocation -> Activate listening immediately like Google Assistant
                 _listeningState.value = AssistantListeningState.SPEECH_LISTENING
                 _statusMessage.value = "Listening to ${prefs.userName}..."
+                startContinuousSession()
                 speechManager?.startListening(prefs.selectedLanguageCode)
+                startContinuousSilenceTimeout()
                 return@launch
             }
 
@@ -637,7 +710,7 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
             )
 
             val verification = voiceprintEngine.verifySpeaker(enrolled, testEmbedding, _voiceSensitivity.value)
-            _lastTestResult.value = verification
+                _lastTestResult.value = verification
 
             if (!verification.isVerified) {
                 _listeningState.value = AssistantListeningState.VOICE_MISMATCH_ALERT
@@ -651,7 +724,9 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
             // Verified Owner -> Start listening for user command
             _listeningState.value = AssistantListeningState.SPEECH_LISTENING
             _statusMessage.value = "Listening to ${prefs.userName}..."
+            startContinuousSession()
             speechManager?.startListening(prefs.selectedLanguageCode)
+            startContinuousSilenceTimeout()
         }
     }
 
@@ -661,6 +736,30 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun processSpokenText(spokenText: String, isSimulatedOwner: Boolean) {
+        silenceTimeoutJob?.cancel()
+
+        val cleanText = spokenText.lowercase().trim()
+        val exitPhrases = listOf("stop", "bye", "goodbye", "cancel", "exit", "shut up", "ruko", "bas karo", "thank you", "nevermind", "chup karo", "bas")
+        val isExit = exitPhrases.any { cleanText == it || cleanText.startsWith("$it ") }
+
+        if (isExit && _isContinuousSessionActive.value) {
+            viewModelScope.launch {
+                _lastRecognizedSpeech.value = spokenText
+                _listeningState.value = AssistantListeningState.SPEAKING
+                _statusMessage.value = "Ending active continuous session..."
+                app.spokenOutputManager.speakGeminiResponse(
+                    rawLlmResponse = "Goodbye!",
+                    onStart = {
+                        _listeningState.value = AssistantListeningState.SPEAKING
+                    },
+                    onComplete = {
+                        endContinuousSession("User requested exit")
+                    }
+                )
+            }
+            return
+        }
+
         viewModelScope.launch {
             _lastRecognizedSpeech.value = spokenText
             _listeningState.value = AssistantListeningState.PROCESSING_LLM
@@ -701,8 +800,16 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
                     _listeningState.value = AssistantListeningState.SPEAKING
                 },
                 onComplete = {
-                    _listeningState.value = AssistantListeningState.STANDBY
-                    _statusMessage.value = "Ready"
+                    if (_isContinuousSessionActive.value && prefs.isContinuousConversationEnabled) {
+                        _listeningState.value = AssistantListeningState.SPEECH_LISTENING
+                        _statusMessage.value = "Active session listening..."
+                        speechManager?.startListening(prefs.selectedLanguageCode)
+                        startContinuousSilenceTimeout()
+                    } else {
+                        _listeningState.value = AssistantListeningState.STANDBY
+                        _statusMessage.value = "Ready"
+                        com.example.service.AuraVoiceService.resumeFromActiveListening()
+                    }
                 }
             )
 
@@ -725,7 +832,8 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
                     toolUsed = result.toolCallRequest?.functionName,
                     speakerConfidence = if (isSimulatedOwner) 0.94f else 0.42f,
                     isOwnerVerified = isSimulatedOwner,
-                    languageCode = prefs.selectedLanguageCode
+                    languageCode = prefs.selectedLanguageCode,
+                    timestamp = System.currentTimeMillis()
                 )
             )
         }

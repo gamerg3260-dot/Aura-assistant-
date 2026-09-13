@@ -87,11 +87,26 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
         private val _activeWakeWordEngine = MutableStateFlow("On-Device Acoustic Engine")
         val activeWakeWordEngine = _activeWakeWordEngine.asStateFlow()
 
+        private val _isPausedForActiveListening = MutableStateFlow(false)
+        val isPausedForActiveListening = _isPausedForActiveListening.asStateFlow()
+
         // Shared event flow notifying listeners when wake-word is verified
         private val _wakeWordDetectedEvent = MutableSharedFlow<Boolean>(extraBufferCapacity = 1)
         val wakeWordDetectedEvent = _wakeWordDetectedEvent.asSharedFlow()
 
         private var activeServiceInstance: AuraVoiceService? = null
+
+        fun pauseForActiveListening() {
+            Log.i("AuraVoiceService", "[STATE_MACHINE] ⏸️ Pausing background wake-word listener for active speech input.")
+            _isPausedForActiveListening.value = true
+            activeServiceInstance?.pauseBackgroundMonitoring()
+        }
+
+        fun resumeFromActiveListening() {
+            Log.i("AuraVoiceService", "[STATE_MACHINE] ▶️ Resuming background wake-word listener after active command session.")
+            _isPausedForActiveListening.value = false
+            activeServiceInstance?.resumeBackgroundMonitoring()
+        }
 
         fun restartWakeWordEngine() {
             activeServiceInstance?.startAcousticMonitorLoop()
@@ -494,6 +509,36 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
         }
     }
 
+    fun pauseBackgroundMonitoring() {
+        try {
+            audioMonitorJob?.cancel()
+            audioMonitorJob = null
+
+            porcupineDetector?.stop()
+            porcupineDetector?.release()
+            porcupineDetector = null
+            _isPorcupineActive.value = false
+
+            audioRecord?.stop()
+            audioRecord?.release()
+            audioRecord = null
+
+            _serviceStatusText.value = "Mic paused for active speech input"
+            updateNotification()
+            Log.d(tag, "[AUDIO_RES_DEBUG] Released AudioRecord & Porcupine hardware mic lock for active speech input.")
+        } catch (e: Exception) {
+            Log.w(tag, "[AUDIO_RES_DEBUG] Error pausing background monitoring: ${e.message}")
+        }
+    }
+
+    fun resumeBackgroundMonitoring() {
+        if (!_isServiceActive.value || _isMuted.value || _isPausedForActiveListening.value) return
+        _serviceStatusText.value = "Voice-Lock Guard Active • Standby for wake word"
+        updateNotification()
+        startAcousticMonitorLoop()
+        Log.d(tag, "[AUDIO_RES_DEBUG] Resuming background acoustic monitor loop.")
+    }
+
     /**
      * High-performance wake-word spotting loop.
      * Uses Picovoice Porcupine SDK for hardware-accelerated, low-power detection when configured,
@@ -501,6 +546,11 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
      */
     @SuppressLint("MissingPermission")
     private fun startAcousticMonitorLoop() {
+        if (_isPausedForActiveListening.value) {
+            Log.d(tag, "[AUDIO_RES_DEBUG] startAcousticMonitorLoop skipped: paused for active speech input.")
+            return
+        }
+
         audioMonitorJob?.cancel()
         porcupineDetector?.release()
         porcupineDetector = null

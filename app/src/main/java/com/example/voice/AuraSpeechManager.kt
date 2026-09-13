@@ -10,6 +10,8 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
 import android.util.Log
+import com.example.service.AuraVoiceService
+import com.example.util.PipelinePerfLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -269,6 +271,9 @@ class AuraSpeechManager(
         stopSpeaking()
         if (_isListening.value) return
 
+        // Pause background wake-word listener to prevent mic hardware lock conflict
+        AuraVoiceService.pauseForActiveListening()
+
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
             Log.w(tag, "Speech recognition not available on this device")
             _isListening.value = false
@@ -282,6 +287,7 @@ class AuraSpeechManager(
                 setRecognitionListener(object : RecognitionListener {
                     override fun onReadyForSpeech(params: Bundle?) {
                         _isListening.value = true
+                        PipelinePerfLogger.markSpeechCaptured()
                     }
 
                     override fun onBeginningOfSpeech() {}
@@ -309,6 +315,7 @@ class AuraSpeechManager(
                         val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                         val spokenText = matches?.firstOrNull()?.trim()
                         if (!spokenText.isNullOrBlank()) {
+                            PipelinePerfLogger.markTranscriptionComplete(spokenText)
                             onSpeechResult(spokenText)
                         }
                     }

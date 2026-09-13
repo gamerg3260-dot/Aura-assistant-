@@ -9,6 +9,7 @@ import com.example.data.preferences.AssistantPreferences
 import com.example.data.security.KeystoreManager
 import com.example.system.DeviceController
 import com.example.system.ToolExecutionModule
+import com.example.util.PipelinePerfLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -175,10 +176,19 @@ class GeminiService(
         memoriesContext: String,
         screenContext: String? = null
     ): AssistantCommandResult = withContext(Dispatchers.IO) {
+        // App Launch Interceptor: If command matches "open X", "launch X", "start X", "X kholo", route directly to App Launcher!
+        val appLaunchResult = tryAppLaunchPreRouting(command)
+        if (appLaunchResult != null) {
+            PipelinePerfLogger.markApiResponseReceived("app_launch_interceptor")
+            return@withContext appLaunchResult
+        }
+
         val apiKey = getEffectiveApiKey()
         if (apiKey.isBlank()) {
             Log.d(tag, "No API key configured. Executing command via offline rule engine.")
+            PipelinePerfLogger.markApiRequestSent()
             val fallbackReply = runOfflineRuleEngine(command, deviceStats)
+            PipelinePerfLogger.markApiResponseReceived("offline_rule_engine")
             val executedResult = executeLegacyTool(fallbackReply.toolCommand, fallbackReply.toolArg1, fallbackReply.toolArg2)
             return@withContext AssistantCommandResult(
                 spokenResponse = fallbackReply.spokenResponse,
@@ -194,8 +204,10 @@ class GeminiService(
             // Build rich structured request for Gemini
             val request = buildGeminiRequest(command, deviceStats, memoriesContext, screenContext)
             Log.d(tag, "Sending command to Gemini via Retrofit: '$command'")
+            PipelinePerfLogger.markApiRequestSent()
 
             val response = apiService.generateContent(apiKey = apiKey, request = request)
+            PipelinePerfLogger.markApiResponseReceived("gemini_api_http_${response.code()}")
 
             if (!response.isSuccessful || response.body() == null) {
                 val errorMsg = response.errorBody()?.string() ?: response.message()
@@ -278,6 +290,41 @@ class GeminiService(
                 executionSource = "offline_fallback_exception"
             )
         }
+    }
+
+    private fun tryAppLaunchPreRouting(command: String): AssistantCommandResult? {
+        val q = command.lowercase().trim()
+        val isAppLaunchPattern = q.startsWith("open ") ||
+                q.startsWith("launch ") ||
+                q.startsWith("start ") ||
+                q.startsWith("kholo ") ||
+                q.endsWith(" kholo") ||
+                q.endsWith(" open karo") ||
+                q.endsWith(" app")
+
+        if (!isAppLaunchPattern) return null
+
+        val appName = q.replace("open app ", "")
+            .replace("open ", "")
+            .replace("launch ", "")
+            .replace("start ", "")
+            .replace("kholo ", "")
+            .replace(" kholo", "")
+            .replace(" open karo", "")
+            .replace(" app", "")
+            .trim()
+
+        if (appName.isBlank()) return null
+
+        Log.i(tag, "[INTENT_ROUTER] Intercepted App Launch Command: '$command' -> target app '$appName'")
+        val toolCall = ToolCallRequest("open_app", mapOf("arg1" to appName, "app_name" to appName))
+        val executedResult = executeToolCall(toolCall)
+        return AssistantCommandResult(
+            spokenResponse = "$appName open kar rahi hun.",
+            toolCallRequest = toolCall,
+            executedToolResult = executedResult,
+            executionSource = "app_launch_intent_interceptor"
+        )
     }
 
     /**

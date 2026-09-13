@@ -468,7 +468,8 @@ class ToolExecutionModule(
                 context.startActivity(launchIntent)
                 ToolExecutionResult("App Launcher", "Opening $appNameOrPackage", true)
             } else {
-                searchWeb(appNameOrPackage)
+                Log.w(tag, "App '$appNameOrPackage' not found on device. App launch commands never fallback to web search.")
+                ToolExecutionResult("App Launcher", "App '$appNameOrPackage' is not installed on this device.", false)
             }
         } catch (e: Exception) {
             ToolExecutionResult("App Launcher", "Could not launch $appNameOrPackage: ${e.message}", false)
