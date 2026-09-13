@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
@@ -230,6 +233,42 @@ fun SettingsScreen(
     var callVoiceAnswer by remember { mutableStateOf(prefs.toggleCallsVoiceAnswer) }
 
     var contactsPrio by remember { mutableStateOf(prefs.toggleContactsPriority) }
+
+    val callPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        val phoneStateGranted = results[Manifest.permission.READ_PHONE_STATE] == true
+        if (phoneStateGranted) {
+            callAnnounce = true
+            viewModel.toggleCallAnnouncer(true)
+            android.widget.Toast.makeText(context, "Call Announcer enabled successfully!", android.widget.Toast.LENGTH_SHORT).show()
+        } else {
+            callAnnounce = false
+            viewModel.toggleCallAnnouncer(false)
+            android.widget.Toast.makeText(context, "READ_PHONE_STATE permission is required for incoming call announcement.", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            try {
+                val componentName = android.content.ComponentName(context, com.example.security.AuraDeviceAdminReceiver::class.java)
+                val intent = Intent(android.app.admin.DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                    putExtra(android.app.admin.DevicePolicyManager.EXTRA_DEVICE_ADMIN, componentName)
+                    putExtra(android.app.admin.DevicePolicyManager.EXTRA_ADD_EXPLANATION, "Aura uses Device Administrator to detect failed lock screen password attempts and guard against device theft.")
+                }
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(context, "Failed to launch device admin settings.", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            isDeviceAdminEnabled = false
+            prefs.isDeviceAdminIntruderGuardEnabled = false
+            android.widget.Toast.makeText(context, "CAMERA permission is required for Intruder Guard.", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
 
     LazyColumn(
         modifier = modifier
@@ -1860,19 +1899,27 @@ fun SettingsScreen(
                 Text("SMART LOCK-SCREEN INTRUDER GUARD", color = AuraCyanPrimary, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 0.8.sp)
                 
                 SubToggleRow("Enable Lock-Screen Guard (Device Admin)", isDeviceAdminEnabled) { checked ->
-                    isDeviceAdminEnabled = checked
-                    prefs.isDeviceAdminIntruderGuardEnabled = checked
                     if (checked) {
-                        try {
-                            val componentName = android.content.ComponentName(context, com.example.security.AuraDeviceAdminReceiver::class.java)
-                            val intent = Intent(android.app.admin.DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-                                putExtra(android.app.admin.DevicePolicyManager.EXTRA_DEVICE_ADMIN, componentName)
-                                putExtra(android.app.admin.DevicePolicyManager.EXTRA_ADD_EXPLANATION, "Aura uses Device Administrator to detect failed lock screen password attempts and guard against device theft.")
+                        val hasCameraPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                        if (hasCameraPermission) {
+                            isDeviceAdminEnabled = true
+                            prefs.isDeviceAdminIntruderGuardEnabled = true
+                            try {
+                                val componentName = android.content.ComponentName(context, com.example.security.AuraDeviceAdminReceiver::class.java)
+                                val intent = Intent(android.app.admin.DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                                    putExtra(android.app.admin.DevicePolicyManager.EXTRA_DEVICE_ADMIN, componentName)
+                                    putExtra(android.app.admin.DevicePolicyManager.EXTRA_ADD_EXPLANATION, "Aura uses Device Administrator to detect failed lock screen password attempts and guard against device theft.")
+                                }
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                android.widget.Toast.makeText(context, "Failed to launch device admin settings.", android.widget.Toast.LENGTH_SHORT).show()
                             }
-                            context.startActivity(intent)
-                        } catch (e: Exception) {
-                            android.widget.Toast.makeText(context, "Failed to launch device admin settings.", android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                         }
+                    } else {
+                        isDeviceAdminEnabled = false
+                        prefs.isDeviceAdminIntruderGuardEnabled = false
                     }
                 }
 
@@ -1985,9 +2032,24 @@ fun SettingsScreen(
                 isExpanded = expandedCategories[9] == true,
                 onToggleExpand = { expandedCategories[9] = !(expandedCategories[9] ?: false) }
             ) {
-                SubToggleRow("Incoming Caller Announcer", callAnnounce) {
-                    callAnnounce = it
-                    viewModel.toggleCallAnnouncer(it)
+                SubToggleRow("Incoming Caller Announcer", callAnnounce) { checked ->
+                    if (checked) {
+                        val hasPhonePermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+                        if (hasPhonePermission) {
+                            callAnnounce = true
+                            viewModel.toggleCallAnnouncer(true)
+                        } else {
+                            callPermissionLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.READ_PHONE_STATE,
+                                    Manifest.permission.READ_CONTACTS
+                                )
+                            )
+                        }
+                    } else {
+                        callAnnounce = false
+                        viewModel.toggleCallAnnouncer(false)
+                    }
                 }
                 SubToggleRow("Voice-Controlled Answer / Reject", callVoiceAnswer) {
                     callVoiceAnswer = it

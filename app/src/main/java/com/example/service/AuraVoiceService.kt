@@ -682,6 +682,7 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
                     audioRecord?.startRecording()
                     val readChunk = ShortArray(bufferSize / 2)
                     var consecutiveSpeechFrames = 0
+                    var backgroundFrameCounter = 0
 
                     while (isActive && _isServiceActive.value) {
                         if (_isMuted.value) {
@@ -691,6 +692,8 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
 
                         val readCount = audioRecord?.read(readChunk, 0, readChunk.size) ?: 0
                         if (readCount > 0) {
+                            backgroundFrameCounter++
+
                             // 1. Compute acoustic RMS energy
                             var sumSquares = 0.0
                             for (i in 0 until readCount) {
@@ -708,12 +711,18 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
 
                             // 2. Update adaptive noise floor
                             noiseFloorRms = (noiseFloorRms * 0.95f) + (normalizedRms * 0.05f)
-                            val speechThreshold = (noiseFloorRms * 2.2f).coerceIn(0.12f, 0.40f)
+                            val speechThreshold = (noiseFloorRms * 1.5f).coerceIn(0.015f, 0.25f)
+
+                            // Log background audio frame arrival for debug verification
+                            if (normalizedRms > speechThreshold || backgroundFrameCounter % 30 == 0) {
+                                Log.d(tag, "[BACKGROUND_MONITOR_DEBUG] Frame received: rms=$normalizedRms, threshold=$speechThreshold, consecutiveSpeechFrames=$consecutiveSpeechFrames (VAD Match: ${normalizedRms > speechThreshold})")
+                            }
 
                             // 3. Voice activity detection & wake-word spotting
                             if (normalizedRms > speechThreshold) {
                                 consecutiveSpeechFrames++
                                 if (consecutiveSpeechFrames == 3) {
+                                    Log.i(tag, "[BACKGROUND_MONITOR_DEBUG] VAD matched 3 consecutive frames! Evaluating voiceprint similarity...")
                                     evaluateWakeWordBiometrics()
                                 }
                             } else {

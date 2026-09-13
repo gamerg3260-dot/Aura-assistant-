@@ -194,6 +194,7 @@ class TheftGuardManager(private val context: Context) : SensorEventListener {
         torchBlinkJob = null
 
         try {
+            toneGenerator?.stopTone()
             toneGenerator?.release()
             toneGenerator = null
         } catch (e: Exception) {

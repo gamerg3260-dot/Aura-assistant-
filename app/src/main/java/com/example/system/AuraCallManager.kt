@@ -114,11 +114,12 @@ class AuraCallManager(
      */
     fun testAnnounceCall(callerName: String = "John Doe"): String {
         Log.i(tag, "[CALL_ANNOUNCER] Testing call announcer for '$callerName'. Toggle state: ${preferences.toggleCallsAnnouncer}")
+        // Always invoke independent of the toggle state to confirm voice delivery works
+        onIncomingCallDetected?.invoke(callerName, "+1-555-0199")
         return if (preferences.toggleCallsAnnouncer) {
-            onIncomingCallDetected?.invoke(callerName, "+1-555-0199")
             "Test announcement triggered for $callerName"
         } else {
-            "Call announcer toggle is OFF in Settings. Turn it ON to hear announcements."
+            "Test announcement triggered for $callerName (Notice: Toggle is currently OFF in settings)"
         }
     }
 
