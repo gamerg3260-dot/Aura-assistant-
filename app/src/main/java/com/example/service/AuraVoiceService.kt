@@ -33,6 +33,7 @@ import androidx.core.content.ContextCompat
 import com.example.AuraApplication
 import com.example.MainActivity
 import com.example.R
+import com.example.data.model.AssistantListeningState
 import com.example.voice.PorcupineWakeWordDetector
 import com.example.voice.VoiceprintEngine
 import kotlinx.coroutines.CoroutineScope
@@ -93,6 +94,30 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
         // Shared event flow notifying listeners when wake-word is verified
         private val _wakeWordDetectedEvent = MutableSharedFlow<Boolean>(extraBufferCapacity = 1)
         val wakeWordDetectedEvent = _wakeWordDetectedEvent.asSharedFlow()
+
+        // Floating Bubble State Tracking
+        private val _assistantState = MutableStateFlow(AssistantListeningState.STANDBY)
+        val assistantState = _assistantState.asStateFlow()
+
+        private val _assistantAudioRms = MutableStateFlow(0f)
+        val assistantAudioRms = _assistantAudioRms.asStateFlow()
+
+        fun updateAssistantState(state: AssistantListeningState) {
+            _assistantState.value = state
+        }
+
+        fun updateAssistantAudioRms(rms: Float) {
+            _assistantAudioRms.value = rms
+        }
+
+        fun updateFloatingBubbleVisibility(context: Context) {
+            val prefs = com.example.AuraApplication.instance.preferences
+            if (prefs.isFloatingBubbleEnabled) {
+                AuraFloatingBubbleManager.showBubble(context)
+            } else {
+                AuraFloatingBubbleManager.hideBubble()
+            }
+        }
 
         private var activeServiceInstance: AuraVoiceService? = null
 
@@ -198,6 +223,7 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
     override fun onCreate() {
         super.onCreate()
         activeServiceInstance = this
+        updateFloatingBubbleVisibility(this)
         try {
             audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
             createNotificationChannel()
@@ -819,6 +845,7 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
         super.onDestroy()
         Log.d(tag, "AuraVoiceService onDestroy called")
         _isServiceActive.value = false
+        AuraFloatingBubbleManager.hideBubble()
         audioMonitorJob?.cancel()
 
         try {

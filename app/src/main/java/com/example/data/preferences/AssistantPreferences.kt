@@ -214,6 +214,19 @@ class AssistantPreferences(context: Context) {
         get() = prefs.getBoolean("toggle_contacts_priority", true)
         set(value) = prefs.edit().putBoolean("toggle_contacts_priority", value).apply()
 
+    // 11. Floating Assistant Bubble
+    var isFloatingBubbleEnabled: Boolean
+        get() = prefs.getBoolean("is_floating_bubble_enabled", false)
+        set(value) = prefs.edit().putBoolean("is_floating_bubble_enabled", value).apply()
+
+    var floatingBubbleX: Int
+        get() = prefs.getInt("floating_bubble_x", 100)
+        set(value) = prefs.edit().putInt("floating_bubble_x", value).apply()
+
+    var floatingBubbleY: Int
+        get() = prefs.getInt("floating_bubble_y", 300)
+        set(value) = prefs.edit().putInt("floating_bubble_y", value).apply()
+
     fun clearVoiceprint() {
         prefs.edit()
             .remove("is_voice_enrolled")

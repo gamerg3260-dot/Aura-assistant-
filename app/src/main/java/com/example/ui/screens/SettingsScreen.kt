@@ -142,6 +142,9 @@ fun SettingsScreen(
     var isContinuousEnabled by remember { mutableStateOf(prefs.isContinuousConversationEnabled) }
     var continuousSilenceTimeout by remember { mutableStateOf(prefs.continuousSilenceTimeoutSeconds.toFloat()) }
 
+    // Floating Bubble Overlay State
+    var isFloatingBubbleEnabled by remember { mutableStateOf(prefs.isFloatingBubbleEnabled) }
+
     // Device Admin Intruder Guard & Face Enrollment States
     var isDeviceAdminEnabled by remember { mutableStateOf(prefs.isDeviceAdminIntruderGuardEnabled) }
     val isOwnerFaceEnrolled by viewModel.isOwnerFaceEnrolled.collectAsState()
@@ -589,6 +592,68 @@ fun SettingsScreen(
                             )
                         }
                     }
+                }
+            }
+        }
+
+        // Section: Floating Assistant Bubble
+        item {
+            Text(
+                text = "FLOATING ASSISTANT BUBBLE",
+                color = TextMuted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.2.sp
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            AuraGlassCard(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Floating Overlay Bubble", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text(
+                            text = "Display a draggable bubble over other apps showing real-time listening and speaking animations.",
+                            color = TextMuted,
+                            fontSize = 12.sp
+                        )
+                    }
+                    Switch(
+                        checked = isFloatingBubbleEnabled,
+                        onCheckedChange = { checked ->
+                            if (checked) {
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M && !Settings.canDrawOverlays(context)) {
+                                    android.widget.Toast.makeText(context, "Please grant overlay permission for Aura first.", android.widget.Toast.LENGTH_LONG).show()
+                                    try {
+                                        val intent = Intent(
+                                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                            Uri.parse("package:${context.packageName}")
+                                        )
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+                                        context.startActivity(intent)
+                                    }
+                                } else {
+                                    isFloatingBubbleEnabled = true
+                                    prefs.isFloatingBubbleEnabled = true
+                                    AuraVoiceService.updateFloatingBubbleVisibility(context)
+                                }
+                            } else {
+                                isFloatingBubbleEnabled = false
+                                prefs.isFloatingBubbleEnabled = false
+                                AuraVoiceService.updateFloatingBubbleVisibility(context)
+                            }
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = AuraCyanPrimary,
+                            checkedTrackColor = AuraCyanPrimary.copy(alpha = 0.4f),
+                            uncheckedThumbColor = TextMuted,
+                            uncheckedTrackColor = AuraCardBorder
+                        )
+                    )
                 }
             }
         }

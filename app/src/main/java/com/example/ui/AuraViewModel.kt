@@ -359,6 +359,18 @@ class AuraViewModel(application: Application) : AndroidViewModel(application) {
         initSpeechManager()
         observeSpokenRms()
         refreshDeviceData()
+
+        // Forward state and RMS to AuraVoiceService for the floating bubble
+        viewModelScope.launch {
+            listeningState.collect { state ->
+                AuraVoiceService.updateAssistantState(state)
+            }
+        }
+        viewModelScope.launch {
+            audioRms.collect { rms ->
+                AuraVoiceService.updateAssistantAudioRms(rms)
+            }
+        }
     }
 
     private fun observeSpokenRms() {
