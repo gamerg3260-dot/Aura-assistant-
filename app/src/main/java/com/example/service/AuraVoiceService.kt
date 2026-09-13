@@ -34,7 +34,7 @@ import com.example.AuraApplication
 import com.example.MainActivity
 import com.example.R
 import com.example.data.model.AssistantListeningState
-import com.example.voice.PorcupineWakeWordDetector
+import com.example.voice.OpenWakeWordDetector
 import com.example.voice.VoiceprintEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -206,7 +206,7 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
     private var wakeLock: PowerManager.WakeLock? = null
     private var audioMonitorJob: Job? = null
     private var audioRecord: AudioRecord? = null
-    private var porcupineDetector: PorcupineWakeWordDetector? = null
+    private var openWakeWordDetector: OpenWakeWordDetector? = null
     private var audioManager: AudioManager? = null
     private var audioFocusRequest: AudioFocusRequest? = null
     private var hasAudioFocus = false
@@ -266,9 +266,9 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
                 _serviceStatusText.value = status
                 updateNotification()
                 if (_isMuted.value) {
-                    porcupineDetector?.stop()
+                    openWakeWordDetector?.stop()
                 } else {
-                    porcupineDetector?.start()
+                    openWakeWordDetector?.start()
                 }
                 Log.d(tag, "Mute toggled: isMuted=${_isMuted.value}")
             }
@@ -469,13 +469,13 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
         val contentTitle = "Aura AI • $userName's Assistant"
         val contentText = when {
             isMutedState -> "Microphone Muted (Listening Paused)"
-            isPorcupine -> "Porcupine Active • Keyword '${prefs.selectedPorcupineKeyword.ifBlank { "JARVIS" }.uppercase()}'"
+            isPorcupine -> "openWakeWord Active • Keyword '${prefs.selectedPorcupineKeyword.ifBlank { "AURA" }.uppercase()}'"
             else -> _serviceStatusText.value
         }
 
         val subText = when {
             !isBatteryExempt -> "⚠️ Battery Optimization Active (Tap to exempt)"
-            isPorcupine -> "Hardware DSP Wake-Word Guard Active"
+            isPorcupine -> "On-Device Neural Wake-Word Active"
             else -> "Voice-Lock Guard Active"
         }
 
@@ -540,9 +540,9 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
             audioMonitorJob?.cancel()
             audioMonitorJob = null
 
-            porcupineDetector?.stop()
-            porcupineDetector?.release()
-            porcupineDetector = null
+            openWakeWordDetector?.stop()
+            openWakeWordDetector?.release()
+            openWakeWordDetector = null
             _isPorcupineActive.value = false
 
             audioRecord?.stop()
@@ -551,7 +551,7 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
 
             _serviceStatusText.value = "Mic paused for active speech input"
             updateNotification()
-            Log.d(tag, "[AUDIO_RES_DEBUG] Released AudioRecord & Porcupine hardware mic lock for active speech input.")
+            Log.d(tag, "[AUDIO_RES_DEBUG] Released AudioRecord & openWakeWord hardware mic lock for active speech input.")
         } catch (e: Exception) {
             Log.w(tag, "[AUDIO_RES_DEBUG] Error pausing background monitoring: ${e.message}")
         }
@@ -567,8 +567,8 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
 
     /**
      * High-performance wake-word spotting loop.
-     * Uses Picovoice Porcupine SDK for hardware-accelerated, low-power detection when configured,
-     * and automatically falls back to the native on-device acoustic RMS & spectral engine.
+     * Uses on-device openWakeWord engine for key-free, open-source keyword detection
+     * on a continuous real-time 16kHz microphone stream.
      */
     @SuppressLint("MissingPermission")
     private fun startAcousticMonitorLoop() {
@@ -578,8 +578,8 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
         }
 
         audioMonitorJob?.cancel()
-        porcupineDetector?.release()
-        porcupineDetector = null
+        openWakeWordDetector?.release()
+        openWakeWordDetector = null
         _isPorcupineActive.value = false
 
         try {
@@ -606,46 +606,40 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
 
         val prefs = AuraApplication.instance.preferences
 
-        // 1. Check if Picovoice Porcupine is enabled and AccessKey is provided
-        if (prefs.usePorcupineWakeWord && prefs.picovoiceAccessKey.isNotBlank()) {
-            val detector = PorcupineWakeWordDetector(
-                context = this@AuraVoiceService,
-                accessKey = prefs.picovoiceAccessKey,
-                onWakeWordDetected = { keywordIndex, keywordName ->
-                    Log.i(tag, "Porcupine spotted wake-word: $keywordName (index=$keywordIndex)")
-                    vibrateFeedback(isSuccess = true)
-                    _serviceStatusText.value = "Wake-Word Spotted ($keywordName)"
-                    updateNotification()
-                    evaluateWakeWordBiometrics()
-                },
-                onError = { ex ->
-                    Log.w(tag, "Porcupine runtime exception: ${ex.message}. Switching to native acoustic fallback.")
-                    _isPorcupineActive.value = false
-                    _activeWakeWordEngine.value = "Aura Acoustic Engine (Fallback)"
-                    startNativeAcousticRecordLoop()
-                }
-            )
-
-            val initialized = detector.initialize(
-                keywordName = prefs.selectedPorcupineKeyword,
-                sensitivity = prefs.porcupineSensitivity
-            )
-
-            if (initialized && detector.start()) {
-                porcupineDetector = detector
-                _isPorcupineActive.value = true
-                _activeWakeWordEngine.value = "Picovoice Porcupine (${prefs.selectedPorcupineKeyword})"
-                Log.i(tag, "Picovoice Porcupine active with keyword: ${prefs.selectedPorcupineKeyword}")
-                return
-            } else {
-                Log.w(tag, "Porcupine could not start: ${detector.lastErrorMessage}. Falling back to native acoustic engine.")
-                detector.release()
+        // Initialize openWakeWord as our primary, open-source, on-device keyword spotter
+        val detector = OpenWakeWordDetector(
+            context = this@AuraVoiceService,
+            onWakeWordDetected = { keywordIndex, keywordName ->
+                Log.i(tag, "openWakeWord spotted wake-word: $keywordName (index=$keywordIndex)")
+                vibrateFeedback(isSuccess = true)
+                _serviceStatusText.value = "Wake-Word Spotted ($keywordName)"
+                updateNotification()
+                evaluateWakeWordBiometrics()
+            },
+            onError = { ex ->
+                Log.w(tag, "openWakeWord engine error: ${ex.message}")
             }
+        )
+
+        val keyword = prefs.selectedPorcupineKeyword.ifBlank { "AURA" }
+        val sensitivity = prefs.porcupineSensitivity
+        val initialized = detector.initialize(
+            keywordName = keyword,
+            sensitivity = sensitivity
+        )
+
+        if (initialized && detector.start()) {
+            openWakeWordDetector = detector
+            _isPorcupineActive.value = true
+            _activeWakeWordEngine.value = "openWakeWord ($keyword)"
+            Log.i(tag, "openWakeWord active with keyword: $keyword")
+        } else {
+            Log.w(tag, "openWakeWord could not start. Falling back to native raw monitor.")
+            _isPorcupineActive.value = false
+            _activeWakeWordEngine.value = "Aura On-Device Acoustic Engine"
         }
 
-        // 2. Native On-Device Acoustic Engine (Default / Fallback)
-        _isPorcupineActive.value = false
-        _activeWakeWordEngine.value = "Aura On-Device Acoustic Engine"
+        // Start the real-time AudioRecord loop which continuously feeds the detector
         startNativeAcousticRecordLoop()
     }
 
@@ -709,27 +703,19 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
                             val normalizedRms = (rms / 32768.0).toFloat().coerceIn(0f, 1f)
                             _backgroundAudioRms.value = normalizedRms
 
-                            // 2. Update adaptive noise floor
+                            // 2. Feed raw 16kHz PCM frames to openWakeWord detector
+                            openWakeWordDetector?.feed(readChunk, readCount)
+
+                            // 3. Update adaptive noise floor for live visual indicator
                             noiseFloorRms = (noiseFloorRms * 0.95f) + (normalizedRms * 0.05f)
                             val speechThreshold = (noiseFloorRms * 1.5f).coerceIn(0.015f, 0.25f)
 
                             // Log background audio frame arrival for debug verification
                             if (normalizedRms > speechThreshold || backgroundFrameCounter % 30 == 0) {
-                                Log.d(tag, "[BACKGROUND_MONITOR_DEBUG] Frame received: rms=$normalizedRms, threshold=$speechThreshold, consecutiveSpeechFrames=$consecutiveSpeechFrames (VAD Match: ${normalizedRms > speechThreshold})")
-                            }
-
-                            // 3. Voice activity detection & wake-word spotting
-                            if (normalizedRms > speechThreshold) {
-                                consecutiveSpeechFrames++
-                                if (consecutiveSpeechFrames == 3) {
-                                    Log.i(tag, "[BACKGROUND_MONITOR_DEBUG] VAD matched 3 consecutive frames! Evaluating voiceprint similarity...")
-                                    evaluateWakeWordBiometrics()
-                                }
-                            } else {
-                                consecutiveSpeechFrames = 0
+                                Log.d(tag, "[BACKGROUND_MONITOR_DEBUG] Frame received: rms=$normalizedRms, threshold=$speechThreshold (openWakeWord active: ${openWakeWordDetector != null})")
                             }
                         }
-                        delay(50)
+                        delay(20) // Fast, real-time streaming frame processing
                     }
                 } else {
                     Log.w(tag, "AudioRecord state not initialized, running simulated background monitor")
@@ -866,8 +852,8 @@ class AuraVoiceService : Service(), AudioManager.OnAudioFocusChangeListener {
         }
 
         try {
-            porcupineDetector?.release()
-            porcupineDetector = null
+            openWakeWordDetector?.release()
+            openWakeWordDetector = null
             _isPorcupineActive.value = false
         } catch (e: Exception) {
             // Ignored

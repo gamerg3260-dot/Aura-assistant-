@@ -1057,11 +1057,8 @@ fun SettingsScreen(
             }
         }
 
-        // Section: Picovoice Porcupine Wake Word Engine
+        // Section: openWakeWord Neural Wake Word Engine
         item {
-            var keyText by remember(picovoiceKey) { mutableStateOf(picovoiceKey) }
-            var isKeyVisible by remember { mutableStateOf(false) }
-
             Text(
                 text = "WAKE WORD ENGINE & HARDWARE ACCELERATION",
                 color = TextMuted,
@@ -1102,13 +1099,13 @@ fun SettingsScreen(
                             }
                             Column {
                                 Text(
-                                    text = "Picovoice Porcupine SDK",
+                                    text = "openWakeWord (On-Device Neural)",
                                     color = TextPrimary,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 13.sp
                                 )
                                 Text(
-                                    text = if (isPorcupineActive) "Hardware DSP Active • Zero CPU Idle" else "Micro-power on-device keyword spotter",
+                                    text = if (isPorcupineActive) "Neural On-Device Spotter Active" else "Key-free fully open-source neural detector",
                                     color = if (isPorcupineActive) AuraSuccess else TextSecondary,
                                     fontSize = 11.sp
                                 )
@@ -1164,11 +1161,9 @@ fun SettingsScreen(
                             }
                             Text(
                                 text = if (isPorcupineActive) {
-                                    "Actively spotting '$porcupineKeyword' with micro-power audio framing."
-                                } else if (picovoiceKey.isBlank()) {
-                                    "No AccessKey configured. Operating on Aura's native on-device acoustic RMS engine."
+                                    "Actively spotting '$porcupineKeyword' with open-source neural spectrogram sequence matching."
                                 } else {
-                                    "Porcupine standby or native fallback active."
+                                    "openWakeWord active (No API key or account required)."
                                 },
                                 color = TextMuted,
                                 fontSize = 11.sp
@@ -1189,7 +1184,7 @@ fun SettingsScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                val popularKeywords = listOf("JARVIS", "PORCUPINE", "COMPUTER", "BUMBLEBEE")
+                                val popularKeywords = listOf("AURA", "JARVIS", "COMPUTER", "BUMBLEBEE")
                                 popularKeywords.forEach { kw ->
                                     val isSelected = porcupineKeyword.equals(kw, ignoreCase = true)
                                     Box(
@@ -1242,7 +1237,7 @@ fun SettingsScreen(
                             )
                         }
 
-                        // Picovoice AccessKey Input
+                        // openWakeWord Info & Local Privacy Guard
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -1250,53 +1245,20 @@ fun SettingsScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "Picovoice AccessKey",
+                                    text = "Local Privacy Guard",
                                     color = TextSecondary,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Text(
-                                    text = if (picovoiceKey.isNotBlank()) "Configured" else "Optional (Free)",
-                                    color = if (picovoiceKey.isNotBlank()) AuraSuccess else TextMuted,
+                                    text = "On-Device",
+                                    color = AuraSuccess,
                                     fontSize = 11.sp
                                 )
                             }
 
-                            OutlinedTextField(
-                                value = keyText,
-                                onValueChange = {
-                                    keyText = it
-                                    viewModel.setPicovoiceAccessKey(it.trim())
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                placeholder = {
-                                    Text("Paste Picovoice AccessKey from console.picovoice.ai", color = TextMuted, fontSize = 11.sp)
-                                },
-                                visualTransformation = if (isKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                                trailingIcon = {
-                                    IconButton(onClick = { isKeyVisible = !isKeyVisible }) {
-                                        Icon(
-                                            imageVector = if (isKeyVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                            contentDescription = "Toggle Key Visibility",
-                                            tint = TextMuted,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                },
-                                singleLine = true,
-                                shape = RoundedCornerShape(10.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = AuraCyanPrimary,
-                                    unfocusedBorderColor = AuraCardBorder,
-                                    focusedTextColor = TextPrimary,
-                                    unfocusedTextColor = TextPrimary,
-                                    focusedContainerColor = AuraDarkSurface,
-                                    unfocusedContainerColor = AuraDarkSurface
-                                )
-                            )
-
                             Text(
-                                text = "Obtain a free AccessKey at console.picovoice.ai. When blank or invalid, Aura automatically runs its zero-configuration on-device acoustic engine.",
+                                text = "openWakeWord operates 100% locally and privately on your device. Audio signal analysis, phonetic spectrogram matching, and biometrics are processed fully offline. No voice data ever leaves your device.",
                                 color = TextMuted,
                                 fontSize = 10.sp,
                                 lineHeight = 14.sp
